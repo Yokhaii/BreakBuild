@@ -1,0 +1,11 @@
+# Project place file (REPLACE WITH YOUR FILE NAME)
+/AnimationModule.rbxlx
+
+# Roblox Studio lock files
+/*.rbxlx.lock
+/*.rbxl.lock
+
+# Other
+
+.vscode
+.DS_STORE
