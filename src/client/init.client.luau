@@ -55,18 +55,6 @@ Preloader.ControllersLoadedSignal:Connect(function()
 		:catch(warn)
 		:await()
 
-	local Root = require(StarterPlayer.StarterPlayerScripts.Client.Roact.Root.Application)
-	local Sync = require(StarterPlayer.StarterPlayerScripts.Client.Modules.Synchronization)
-	Sync()
-	Roact.mount(
-		Roact.createElement(RoduxHooks.Provider, {
-			store = Store,
-		}, {
-			GameScreenGui = Roact.createElement(Root.Game),
-		}),
-		Players.LocalPlayer.PlayerGui,
-		"UI"
-	)
 end)
 
 Preloader.EndPreloaderSignal:Connect(function(bool)

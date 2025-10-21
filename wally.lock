@@ -18,6 +18,11 @@ version = "0.3.0"
 dependencies = []
 
 [[package]]
+name = "release/animation-module"
+version = "0.1.26"
+dependencies = [["knit", "sleitnick/knit@1.7.0"], ["signal", "sleitnick/signal@2.0.1"]]
+
+[[package]]
 name = "release/core-module"
 version = "1.1.0"
 dependencies = []
@@ -105,4 +110,4 @@ dependencies = [["Roact", "roblox/roact@1.4.4"]]
 [[package]]
 name = "yoannrompion/basegame"
 version = "0.1.0"
-dependencies = [["Hooks", "kampfkarren/roact-hooks@0.3.0"], ["Input", "sleitnick/input@2.3.0"], ["Knit", "sleitnick/knit@1.7.0"], ["Preloader", "release/preloader-module@1.0.5"], ["Roact", "roblox/roact@1.4.4"], ["RoactRodux", "roblox/roact-rodux@0.3.0"], ["RoactSpring", "chriscerie/roact-spring@1.1.6"], ["Rodux", "roblox/rodux@3.0.0"], ["Roduxhooks", "solarhorizon/rodux-hooks@0.3.1"], ["Shake", "sleitnick/shake@1.1.0"], ["Signal", "sleitnick/signal@2.0.1"], ["Sound", "release/sound-module@0.0.11"], ["Timer", "sleitnick/timer@1.1.2"], ["Trove", "sleitnick/trove@1.4.0"]]
+dependencies = [["Animation", "release/animation-module@0.1.26"], ["Hooks", "kampfkarren/roact-hooks@0.3.0"], ["Input", "sleitnick/input@2.3.0"], ["Knit", "sleitnick/knit@1.7.0"], ["Preloader", "release/preloader-module@1.0.5"], ["Roact", "roblox/roact@1.4.4"], ["RoactRodux", "roblox/roact-rodux@0.3.0"], ["RoactSpring", "chriscerie/roact-spring@1.1.6"], ["Rodux", "roblox/rodux@3.0.0"], ["Roduxhooks", "solarhorizon/rodux-hooks@0.3.1"], ["Shake", "sleitnick/shake@1.1.0"], ["Signal", "sleitnick/signal@2.0.1"], ["Sound", "release/sound-module@0.0.11"], ["Timer", "sleitnick/timer@1.1.2"], ["Trove", "sleitnick/trove@1.4.0"]]
