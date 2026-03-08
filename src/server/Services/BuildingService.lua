@@ -574,6 +574,77 @@ function BuildingService:PlaceBlock(player: Player, position: Vector3, itemName:
 	return true
 end
 
+-- Remove a placed block
+function BuildingService:RemoveBlock(player: Player, blockId: string): (boolean, string?)
+	print("[BuildingService] RemoveBlock called for", player.Name, "blockId:", blockId)
+
+	-- Get building data
+	local buildingData = getBuildingData(player)
+	if not buildingData then
+		warn("[BuildingService] No building data found")
+		return false, nil
+	end
+
+	-- Find the block in PlacedBlocks
+	local blockIndex = nil
+	local blockData = nil
+	for index, block in ipairs(buildingData.PlacedBlocks) do
+		if block.id == blockId then
+			blockIndex = index
+			blockData = block
+			break
+		end
+	end
+
+	if not blockIndex or not blockData then
+		warn("[BuildingService] Block not found in data:", blockId)
+		return false, nil
+	end
+
+	print("[BuildingService] Block found in data:", blockData.itemName)
+
+	-- Find the block in the world
+	local zone, _, _ = getBuildingZone()
+	if not zone then
+		warn("[BuildingService] BuildingZone not found")
+		return false, nil
+	end
+
+	local blockModel = nil
+	for _, child in ipairs(zone:GetChildren()) do
+		local childBlockId = child:FindFirstChild("BlockId")
+		if childBlockId and childBlockId.Value == blockId then
+			blockModel = child
+			break
+		end
+	end
+
+	if not blockModel then
+		warn("[BuildingService] Block model not found in world:", blockId)
+		-- Still remove from data even if model not found
+	else
+		-- Destroy the model
+		blockModel:Destroy()
+		print("[BuildingService] Block model destroyed")
+	end
+
+	-- Get item name before removing from data
+	local itemName = blockData.itemName
+
+	-- Remove from PlacedBlocks data
+	table.remove(buildingData.PlacedBlocks, blockIndex)
+	print("[BuildingService] Block removed from data")
+
+	-- Add item back to player's inventory
+	InventoryService:AddItem(player, itemName, 1)
+	print("[BuildingService] Item added back to inventory:", itemName)
+
+	-- Notify client
+	self.Client.BlockRemoved:Fire(player, blockId)
+
+	return true, itemName
+end
+
 -- Create a block in the world
 function BuildingService:CreateBlockInWorld(itemName: string, position: Vector3, size: Vector3): Model?
 	local itemConfig = ItemData.GetItem(itemName)
@@ -707,6 +778,11 @@ end
 -- Place block (client call)
 function BuildingService.Client:PlaceBlock(player: Player, position: Vector3, itemName: string): boolean
 	return self.Server:PlaceBlock(player, position, itemName)
+end
+
+-- Remove block (client call)
+function BuildingService.Client:RemoveBlock(player: Player, blockId: string): (boolean, string?)
+	return self.Server:RemoveBlock(player, blockId)
 end
 
 -- Get building area info for client

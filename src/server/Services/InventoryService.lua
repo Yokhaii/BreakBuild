@@ -52,6 +52,130 @@ local function generateItemId(player: Player): string
 	return id
 end
 
+-- Ensure Hammer is in slot 1 (permanent tool)
+local function ensureHammerInSlot1(inventory)
+	-- Check if Hammer is already in slot 1
+	if inventory.Hotbar[1] and inventory.Hotbar[1].itemName == "Hammer" then
+		return -- Already there, nothing to do
+	end
+
+	-- Check if Hammer exists elsewhere in inventory
+	local hammerInHotbar = nil
+	for slot = 2, HOTBAR_SIZE do
+		if inventory.Hotbar[slot] and inventory.Hotbar[slot].itemName == "Hammer" then
+			hammerInHotbar = slot
+			break
+		end
+	end
+
+	-- Check backpack
+	local hammerInBackpack = nil
+	for index, item in ipairs(inventory.Backpack) do
+		if item.itemName == "Hammer" then
+			hammerInBackpack = index
+			break
+		end
+	end
+
+	-- Create Hammer item
+	local hammerItem = {
+		id = "hammer_permanent",
+		itemName = "Hammer",
+		quantity = 1,
+	}
+
+	-- If Hammer exists elsewhere, remove it
+	if hammerInHotbar then
+		inventory.Hotbar[hammerInHotbar] = nil
+	elseif hammerInBackpack then
+		table.remove(inventory.Backpack, hammerInBackpack)
+	end
+
+	-- If slot 1 is occupied, move that item to first available slot
+	if inventory.Hotbar[1] then
+		local existingItem = inventory.Hotbar[1]
+
+		-- Try to find empty hotbar slot
+		local movedToHotbar = false
+		for slot = 2, HOTBAR_SIZE do
+			if not inventory.Hotbar[slot] then
+				inventory.Hotbar[slot] = existingItem
+				movedToHotbar = true
+				break
+			end
+		end
+
+		-- If no empty hotbar slot, move to backpack
+		if not movedToHotbar then
+			table.insert(inventory.Backpack, existingItem)
+		end
+	end
+
+	-- Place Hammer in slot 1
+	inventory.Hotbar[1] = hammerItem
+end
+
+-- Ensure WoodenPickaxe is in slot 2 (starting tool for testing)
+local function ensureWoodenPickaxeInSlot2(inventory)
+	-- Check if WoodenPickaxe is already in slot 2
+	if inventory.Hotbar[2] and inventory.Hotbar[2].itemName == "WoodenPickaxe" then
+		return -- Already there
+	end
+
+	-- Check if WoodenPickaxe exists elsewhere in hotbar
+	local pickaxeInHotbar = nil
+	for slot = 1, HOTBAR_SIZE do
+		if slot ~= 2 and inventory.Hotbar[slot] and inventory.Hotbar[slot].itemName == "WoodenPickaxe" then
+			pickaxeInHotbar = slot
+			break
+		end
+	end
+
+	-- Check backpack
+	local pickaxeInBackpack = nil
+	for index, item in ipairs(inventory.Backpack) do
+		if item.itemName == "WoodenPickaxe" then
+			pickaxeInBackpack = index
+			break
+		end
+	end
+
+	-- If already exists somewhere, don't create another
+	if pickaxeInHotbar or pickaxeInBackpack then
+		return
+	end
+
+	-- Create WoodenPickaxe item
+	local pickaxeItem = {
+		id = "woodenpickaxe_starter",
+		itemName = "WoodenPickaxe",
+		quantity = 1,
+	}
+
+	-- If slot 2 is occupied, move that item to first available slot
+	if inventory.Hotbar[2] then
+		local existingItem = inventory.Hotbar[2]
+
+		-- Try to find empty hotbar slot
+		local movedToHotbar = false
+		for slot = 3, HOTBAR_SIZE do
+			if not inventory.Hotbar[slot] then
+				inventory.Hotbar[slot] = existingItem
+				movedToHotbar = true
+				break
+			end
+		end
+
+		-- If no empty hotbar slot, move to backpack
+		if not movedToHotbar then
+			table.insert(inventory.Backpack, existingItem)
+		end
+	end
+
+	-- Place WoodenPickaxe in slot 2
+	inventory.Hotbar[2] = pickaxeItem
+end
+
 -- Get inventory data for player
 local function getInventory(player: Player)
 	local playerData = DataService:GetData(player)
@@ -657,6 +781,9 @@ function InventoryService:KnitStart()
 			task.wait(0.5) -- Small delay to ensure data is loaded
 			local inventory = getInventory(player)
 			if inventory then
+				-- Ensure starter tools
+				ensureHammerInSlot1(inventory)
+				ensureWoodenPickaxeInSlot2(inventory)
 				-- Never load equipped state - always start unequipped
 				inventory.EquippedSlot = nil
 				fireInventoryUpdate(self, player, inventory)
@@ -668,6 +795,9 @@ function InventoryService:KnitStart()
 			task.wait(0.5)
 			local inventory = getInventory(player)
 			if inventory then
+				-- Ensure starter tools
+				ensureHammerInSlot1(inventory)
+				ensureWoodenPickaxeInSlot2(inventory)
 				-- Never load equipped state - always start unequipped
 				inventory.EquippedSlot = nil
 				fireInventoryUpdate(self, player, inventory)

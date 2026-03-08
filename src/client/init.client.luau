@@ -19,8 +19,11 @@ local RoduxHooks = require(ReplicatedStorage.Packages.Roduxhooks)
 
 local Store = require(StarterPlayer.StarterPlayerScripts.Client.Rodux.Store)
 local Preloader = require(ReplicatedStorage.Packages.Preloader)
+require(ReplicatedStorage.Packages.Animation)
 
 local UserInputService = game:GetService("UserInputService")
+
+
 
 
 if UserInputService.TouchEnabled then -- Check if device has touch capabilities

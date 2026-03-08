@@ -1,7 +1,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+
 -- Packages
 local Knit = require(ReplicatedStorage.Packages.Knit)
+require(ReplicatedStorage.Packages.Animation)
 
 -- Services
 for _, file in pairs(script.Services:GetChildren()) do

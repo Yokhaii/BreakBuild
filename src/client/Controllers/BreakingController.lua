@@ -1,18 +1,34 @@
+--[[
+	BreakingController.lua
+	Unified client-side breaking controller
+	- Detects ANY breakable object (blocks, tree logs, rocks, etc.)
+	- Shows preview highlight when hovering
+	- Sends break requests to BreakingService
+	- Handles visual feedback (animations, VFX)
+	- Plays spawn animations for blocks (from BreakingAreaService)
+]]
+
 -- Services
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 -- Knit packages
 local Packages = ReplicatedStorage.Packages
 local Knit = require(Packages.Knit)
+local Animation = require(Packages.Animation)
 
 -- Player
 local player = Players.LocalPlayer
+local mouse = player:GetMouse()
 
--- Data
+-- Data & Config
+local ItemData = require(ReplicatedStorage.Shared.Data.Items)
 local MaterialData = require(ReplicatedStorage.Shared.Data.MaterialData)
+local BreakingConfig = require(ReplicatedStorage.Shared.Config.BreakingConfig)
 
 -- BreakingController
 local BreakingController = Knit.CreateController({
@@ -20,571 +36,813 @@ local BreakingController = Knit.CreateController({
 })
 
 -- Constants
-local GRID_ROWS = 6
-local GRID_COLS = 7
-local FLOAT_HEIGHT = 0.5 -- How high materials float up and down
-local FLOAT_DURATION = 2 -- Duration of one float cycle
-local FALL_SPEED = 0.3 -- Duration for falling animation
-local SPAWN_DURATION = 0.4 -- Duration for spawn animation
-local COLLECTION_DURATION = 0.5 -- Duration for collection tween animation (configurable)
+local HIGHLIGHT_PREVIEW_COLOR = Color3.fromRGB(255, 255, 255)
 
 -- Types
-type MaterialInstance = {
-	model: Model,
-	baseTween: Tween?,
-	basePosition: Vector3,
+type BreakableData = {
+	id: string,
+	materialType: string,
+	position: Vector3,
 }
 
 -- Private variables
 local BreakingService
-local materialInstances: {{MaterialInstance?}} = {}
-local gridData: {{string}} = {}
-local heldMaterialModel: Model? = nil -- Currently held material model
-local heldMaterialWeld: WeldConstraint? = nil -- Weld holding material to player
+local BreakingAreaService
+local InventoryController
+local breakableData: {[string]: BreakableData} = {} -- Track breakable positions
+local isMouseDown = false
+local currentBreakingId: string? = nil
+local currentBreakingProgress: number = 0
 
---|| Local Functions ||--
+-- Client-side humanoid animation state
+local isPlayingMiningAnimation = false
 
--- Get attachment position for grid cell
-local function getAttachmentPosition(x: number, y: number): Vector3?
-	local mountain = Workspace:FindFirstChild("Mountain")
-	if not mountain or not mountain.PrimaryPart then
-		warn("Mountain or Mountain.PrimaryPart not found in Workspace!")
+-- Preview state
+local hoveredBreakableId: string? = nil
+local previewHighlight: Highlight? = nil
+local previewBillboard: BillboardGui? = nil
+
+-- Spawn animation state (for blocks)
+local animatingBlocks: {[string]: Model} = {}
+
+-- Breaking shake animation state
+local shakeModel: (Model | BasePart)? = nil
+local shakeOriginalCFrame: CFrame? = nil
+local SHAKE_BASE_FREQUENCY = 2
+local SHAKE_MAX_FREQUENCY = 10
+local SHAKE_AMPLITUDE = 0.05
+
+-- Breaking VFX state
+local breakingVFXParticles: {ParticleEmitter} = {}
+local breakingVFXScalable: {ParticleEmitter} = {} -- Square_50, Square_200 that scale with progress
+local breakingVFXBaseRates: {[ParticleEmitter]: number} = {} -- Store base rates
+local breakingColor: Color3? = nil
+local VFX_FOLDER_PATH = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("VFX"):WaitForChild("Breaking"):WaitForChild("4x4")
+
+-- References
+local breakingZone = nil
+
+--|| Animation Functions ||--
+
+-- Create a local model for spawn animation (blocks only)
+local function createLocalBlockModel(materialType: string, position: Vector3, blockId: string): Model?
+	local itemConfig = ItemData.GetItem(materialType)
+	if not itemConfig or not itemConfig.buildingPartPath then
 		return nil
 	end
 
-	local attachmentName = string.format("%d,%d", x, y) 
-	local attachment = mountain.PrimaryPart.MaterialsAttachments:FindFirstChild(attachmentName)
+	local pathParts = string.split(itemConfig.buildingPartPath, ".")
+	local current = ReplicatedStorage
 
-	if not attachment or not attachment:IsA("Attachment") then
-		warn("Attachment not found:", attachmentName)
+	local startIndex = 1
+	if pathParts[1] == "ReplicatedStorage" then
+		startIndex = 2
+	end
+
+	for i = startIndex, #pathParts do
+		current = current:FindFirstChild(pathParts[i])
+		if not current then
+			return nil
+		end
+	end
+
+	if not current:IsA("Model") and not current:IsA("BasePart") then
 		return nil
 	end
 
-	return attachment.WorldPosition
+	local model = current:Clone()
+	model.Name = "SpawnAnim_" .. blockId
+
+	if model:IsA("Model") and model.PrimaryPart then
+		model:SetPrimaryPartCFrame(CFrame.new(position))
+	elseif model:IsA("BasePart") then
+		model.Position = position
+		model.Size = BreakingConfig.BlockSize
+		model.Anchored = true
+		model.CanCollide = false
+	end
+
+	-- Make parts non-collidable during animation
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = false
+		end
+	end
+
+	return model
 end
 
--- Create floating tween animation
-local function createFloatTween(model: Model, basePosition: Vector3): Tween
-	if not model.PrimaryPart then
-		warn("Model has no PrimaryPart for float tween:", model.Name)
-		return nil
+-- Animate a model/part from start to end position over duration
+local function animatePosition(model: Instance, startPos: Vector3, endPos: Vector3, duration: number, easingStyle: Enum.EasingStyle, easingDir: Enum.EasingDirection)
+	local startTime = tick()
+	local isModel = model:IsA("Model")
+
+	while true do
+		local elapsed = tick() - startTime
+		local alpha = math.clamp(elapsed / duration, 0, 1)
+
+		-- Apply easing
+		local easedAlpha = TweenService:GetValue(alpha, easingStyle, easingDir)
+		local currentPos = startPos:Lerp(endPos, easedAlpha)
+
+		if isModel and model.PrimaryPart then
+			model:PivotTo(CFrame.new(currentPos))
+		elseif model:IsA("BasePart") then
+			model.Position = currentPos
+		end
+
+		if alpha >= 1 then break end
+		RunService.Heartbeat:Wait()
 	end
-
-	local baseCFrame = CFrame.new(basePosition)
-	local floatCFrame = baseCFrame + Vector3.new(0, FLOAT_HEIGHT, 0)
-
-	local tweenInfo = TweenInfo.new(
-		FLOAT_DURATION,
-		Enum.EasingStyle.Sine,
-		Enum.EasingDirection.InOut,
-		-1, -- Repeat infinitely
-		true -- Reverse
-	)
-
-	local tween = TweenService:Create(model.PrimaryPart, tweenInfo, {
-		CFrame = floatCFrame
-	})
-
-	return tween
 end
 
--- Create collection animation (material flies to player)
-local function playCollectionAnimation(x: number, y: number, materialType: string)
-	-- Get the material's current position
-	local startPosition = getAttachmentPosition(x, y)
-	if not startPosition then
-		warn("Failed to get position for collection animation:", x, y)
-		return
-	end
+-- Play spawn animation for a block
+local function playSpawnAnimation(blockData: {id: string, materialType: string, position: Vector3})
+	local blockId = blockData.id
+	local finalPosition = blockData.position
 
-	-- Get player's character
-	local character = player.Character
-	if not character then return end
+	local model = createLocalBlockModel(blockData.materialType, finalPosition, blockId)
+	if not model then return end
 
-	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-	if not humanoidRootPart then return end
-
-	-- Find material in ReplicatedStorage
-	local materialsFolder = ReplicatedStorage:FindFirstChild("Assets")
-	if materialsFolder then
-		materialsFolder = materialsFolder:FindFirstChild("Materials")
-	end
-
-	if not materialsFolder then
-		warn("Assets/Materials folder not found in ReplicatedStorage!")
-		return
-	end
-
-	local materialTemplate = materialsFolder:FindFirstChild(materialType)
-	if not materialTemplate or not materialTemplate:IsA("Model") then
-		warn("Material model not found for collection:", materialType)
-		return
-	end
-
-	-- Clone the material for the animation
-	local materialClone = materialTemplate:Clone()
+	-- Start position (underground)
+	local startY = finalPosition.Y + BreakingConfig.SpawnStartOffset
+	local overshootY = finalPosition.Y + BreakingConfig.SpawnOvershootHeight
+	local startPos = Vector3.new(finalPosition.X, startY, finalPosition.Z)
+	local overshootPos = Vector3.new(finalPosition.X, overshootY, finalPosition.Z)
 
 	-- Set initial position
-	if materialClone.PrimaryPart then
-		materialClone:SetPrimaryPartCFrame(CFrame.new(startPosition))
+	if model:IsA("Model") and model.PrimaryPart then
+		model:PivotTo(CFrame.new(startPos))
+	elseif model:IsA("BasePart") then
+		model.Position = startPos
+	end
+
+	-- Parent to workspace
+	local zone = breakingZone or Workspace
+	model.Parent = zone
+
+	animatingBlocks[blockId] = model
+
+	-- Animation phases
+	local phase1Duration = BreakingConfig.SpawnAnimationDuration * 0.6
+	local phase2Duration = BreakingConfig.SpawnAnimationDuration * 0.4
+
+	-- Phase 1: Rise up with overshoot
+	animatePosition(model, startPos, overshootPos, phase1Duration, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+
+	-- Phase 2: Settle to final position
+	animatePosition(model, overshootPos, finalPosition, phase2Duration, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out)
+
+	-- Cleanup
+	if animatingBlocks[blockId] then
+		animatingBlocks[blockId]:Destroy()
+		animatingBlocks[blockId] = nil
+	end
+end
+
+--|| Mining Animation ||--
+
+local function startMiningAnimation()
+	local character = player.Character
+	if not character then return end
+	Animation:PlayAnim("Humanoid_Mining", character)
+	isPlayingMiningAnimation = true
+end
+
+local function stopMiningAnimation()
+	local character = player.Character
+	if not character then return end
+	Animation:StopAnim("Humanoid_Mining", character)
+	isPlayingMiningAnimation = false
+end
+
+--|| Shake Animation ||--
+
+local function startShakeAnimation(model: Model | BasePart)
+	if model:IsA("Model") and model.PrimaryPart then
+		shakeModel = model
+		shakeOriginalCFrame = model.PrimaryPart.CFrame
+	elseif model:IsA("BasePart") then
+		shakeModel = model
+		shakeOriginalCFrame = model.CFrame
+	end
+end
+
+local function stopShakeAnimation()
+	if shakeModel and shakeOriginalCFrame then
+		if shakeModel:IsA("Model") and shakeModel.PrimaryPart then
+			shakeModel:SetPrimaryPartCFrame(shakeOriginalCFrame)
+		elseif shakeModel:IsA("BasePart") then
+			shakeModel.CFrame = shakeOriginalCFrame
+		end
+	end
+	shakeModel = nil
+	shakeOriginalCFrame = nil
+end
+
+local function updateShakeAnimation(progress: number)
+	if not shakeModel or not shakeOriginalCFrame then return end
+
+	local frequency = SHAKE_BASE_FREQUENCY + (SHAKE_MAX_FREQUENCY - SHAKE_BASE_FREQUENCY) * progress
+	local time = tick()
+	local offset = math.sin(time * frequency * math.pi * 2) * SHAKE_AMPLITUDE
+
+	-- Shake up/down (Y axis)
+	local newCFrame = shakeOriginalCFrame * CFrame.new(0, offset, 0)
+
+	if shakeModel:IsA("Model") and shakeModel.PrimaryPart then
+		shakeModel:SetPrimaryPartCFrame(newCFrame)
+	elseif shakeModel:IsA("BasePart") then
+		shakeModel.CFrame = newCFrame
+	end
+end
+
+--|| Breaking VFX ||--
+
+local function startBreakingVFX(model: Model | BasePart)
+	-- Get color from material
+	local materialValue
+	if model:IsA("Model") and model.PrimaryPart then
+		materialValue = model.PrimaryPart:FindFirstChild("MaterialType")
 	else
-		warn("Material clone has no PrimaryPart:", materialType)
-		materialClone:Destroy()
+		materialValue = model:FindFirstChild("MaterialType")
+	end
+
+	if materialValue then
+		local matProps = MaterialData.GetProperties(materialValue.Value)
+		if matProps then
+			breakingColor = matProps.color
+		end
+	end
+
+	-- Find target part
+	local targetPart
+	if model:IsA("Model") and model.PrimaryPart then
+		targetPart = model.PrimaryPart
+	elseif model:IsA("BasePart") then
+		targetPart = model
+	end
+
+	if not targetPart then return end
+
+	-- Try to get VFX from folder
+	local vfxFolder = ReplicatedStorage:FindFirstChild("Assets")
+	if vfxFolder then
+		vfxFolder = vfxFolder:FindFirstChild("VFX")
+		if vfxFolder then
+			vfxFolder = vfxFolder:FindFirstChild("Breaking")
+			if vfxFolder then
+				vfxFolder = vfxFolder:FindFirstChild("4x4")
+			end
+		end
+	end
+
+	if vfxFolder then
+		-- Use existing VFX emitters: Emit_50, Square_50, Square_200
+		local emitterNames = {"Emit_50", "Square_50", "Square_200"}
+		for _, emitterName in ipairs(emitterNames) do
+			local emitterTemplate = vfxFolder:FindFirstChild(emitterName)
+			if emitterTemplate and emitterTemplate:IsA("ParticleEmitter") then
+				local emitter = emitterTemplate:Clone()
+				if breakingColor then
+					emitter.Color = ColorSequence.new(breakingColor)
+				end
+				emitter.Parent = targetPart
+				emitter.Enabled = true
+				table.insert(breakingVFXParticles, emitter)
+
+				-- Track Square_50 and Square_200 for rate scaling based on progress
+				if emitterName == "Square_50" or emitterName == "Square_200" then
+					breakingVFXBaseRates[emitter] = emitter.Rate
+					emitter.Rate = emitter.Rate / 5 -- Start at 1/5 of base rate
+					table.insert(breakingVFXScalable, emitter)
+				end
+			end
+		end
+	else
+		-- Fallback: create simple particles
+		local attachment = Instance.new("Attachment")
+		attachment.Parent = targetPart
+
+		local particle = Instance.new("ParticleEmitter")
+		particle.Color = ColorSequence.new(breakingColor or Color3.new(0.5, 0.5, 0.5))
+		particle.Size = NumberSequence.new(0.3, 0)
+		particle.Lifetime = NumberRange.new(0.3, 0.6)
+		particle.Rate = 20
+		particle.Speed = NumberRange.new(3, 6)
+		particle.SpreadAngle = Vector2.new(45, 45)
+		particle.Parent = attachment
+
+		table.insert(breakingVFXParticles, particle)
+	end
+end
+
+local function updateBreakingVFX(progress: number)
+	-- Scale Square_50 and Square_200 rate from 1/5 to full based on progress
+	for _, emitter in ipairs(breakingVFXScalable) do
+		local baseRate = breakingVFXBaseRates[emitter]
+		if baseRate then
+			-- Lerp from baseRate/5 to baseRate based on progress
+			local minRate = baseRate / 5
+			emitter.Rate = minRate + (baseRate - minRate) * progress
+		end
+	end
+end
+
+local function stopBreakingVFX()
+	for _, particle in ipairs(breakingVFXParticles) do
+		if particle then
+			particle.Enabled = false
+			-- Clean up after particles fade
+			task.delay(1, function()
+				if particle and particle.Parent then
+					particle:Destroy()
+				end
+			end)
+		end
+	end
+	breakingVFXParticles = {}
+	breakingVFXScalable = {}
+	breakingVFXBaseRates = {}
+	breakingColor = nil
+end
+
+--|| Tool Checking ||--
+
+local function getToolConfig()
+	if not InventoryController then
+		return { toolTier = BreakingConfig.BareHandToolTier, breakSpeed = BreakingConfig.BareHandBreakSpeed, isBareHand = true }
+	end
+
+	local inventory = InventoryController:GetInventory()
+	if not inventory or not inventory.EquippedSlot then
+		return { toolTier = BreakingConfig.BareHandToolTier, breakSpeed = BreakingConfig.BareHandBreakSpeed, isBareHand = true }
+	end
+
+	local equippedItem = inventory.Hotbar[inventory.EquippedSlot]
+	if not equippedItem then
+		return { toolTier = BreakingConfig.BareHandToolTier, breakSpeed = BreakingConfig.BareHandBreakSpeed, isBareHand = true }
+	end
+
+	local itemConfig = ItemData.GetItem(equippedItem.itemName)
+	if not itemConfig or not itemConfig.isBreakingTool then
+		return { toolTier = BreakingConfig.BareHandToolTier, breakSpeed = BreakingConfig.BareHandBreakSpeed, isBareHand = true }
+	end
+
+	return itemConfig
+end
+
+local function canBreakHoveredObject(): boolean
+	if not hoveredBreakableId then return false end
+
+	local breakable = breakableData[hoveredBreakableId]
+	if not breakable then return false end
+
+	local toolConfig = getToolConfig()
+
+	if toolConfig.canBreakAll then
+		return true
+	end
+
+	return MaterialData.CanToolBreak(toolConfig.toolTier, breakable.materialType)
+end
+
+local function updateMiningAnimation()
+	local shouldPlay = isMouseDown and canBreakHoveredObject()
+
+	if shouldPlay and not isPlayingMiningAnimation then
+		startMiningAnimation()
+	elseif not shouldPlay and isPlayingMiningAnimation then
+		stopMiningAnimation()
+	end
+end
+
+--|| Zone Functions ||--
+
+local function getBreakingZone()
+	if not breakingZone then
+		breakingZone = Workspace:FindFirstChild("BreakingZone")
+	end
+	return breakingZone
+end
+
+--|| Detection Functions ||--
+
+-- Detect any breakable under cursor via raycast
+local function detectBreakableUnderCursor(): (string?, Instance?)
+	local camera = Workspace.CurrentCamera
+	local mouseRay = camera:ScreenPointToRay(mouse.X, mouse.Y)
+	local rayOrigin = mouseRay.Origin
+	local rayDirection = mouseRay.Direction * 1000
+
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	raycastParams.FilterDescendantsInstances = {player.Character}
+
+	local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+
+	if not raycastResult then
+		return nil, nil
+	end
+
+	local hitInstance = raycastResult.Instance
+	local hitPosition = raycastResult.Position
+
+	-- Traverse up from hit instance to find BreakableId
+	local current = hitInstance
+	while current and current ~= Workspace do
+		-- Check if current instance has BreakableId directly
+		local breakableIdValue = current:FindFirstChild("BreakableId")
+		local playerIdValue = current:FindFirstChild("PlayerId")
+
+		if breakableIdValue and playerIdValue and playerIdValue.Value == player.UserId then
+			-- Found breakable, check range
+			local character = player.Character
+			if character then
+				local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+				if humanoidRootPart then
+					local distance = (hitPosition - humanoidRootPart.Position).Magnitude
+					if distance <= BreakingConfig.BreakRange then
+						-- If this is a BasePart inside a Model, return the Model for highlighting
+						if current:IsA("BasePart") and current.Parent and current.Parent:IsA("Model") then
+							local parentModel = current.Parent
+							-- Check if parent Model's PrimaryPart has same BreakableId
+							if parentModel.PrimaryPart and parentModel.PrimaryPart:FindFirstChild("BreakableId") then
+								local parentBreakableId = parentModel.PrimaryPart:FindFirstChild("BreakableId")
+								if parentBreakableId and parentBreakableId.Value == breakableIdValue.Value then
+									return breakableIdValue.Value, parentModel
+								end
+							end
+						end
+						return breakableIdValue.Value, current
+					end
+				end
+			end
+			return nil, nil
+		end
+
+		-- Check if current is a Model with PrimaryPart that has BreakableId
+		if current:IsA("Model") and current.PrimaryPart then
+			breakableIdValue = current.PrimaryPart:FindFirstChild("BreakableId")
+			playerIdValue = current.PrimaryPart:FindFirstChild("PlayerId")
+
+			if breakableIdValue and playerIdValue and playerIdValue.Value == player.UserId then
+				-- Found breakable on PrimaryPart, check range
+				local character = player.Character
+				if character then
+					local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+					if humanoidRootPart then
+						local distance = (hitPosition - humanoidRootPart.Position).Magnitude
+						if distance <= BreakingConfig.BreakRange then
+							return breakableIdValue.Value, current
+						end
+					end
+				end
+				return nil, nil
+			end
+		end
+
+		current = current.Parent
+	end
+
+	return nil, nil
+end
+
+--|| Preview Functions ||--
+
+local function clearPreviewHighlight()
+	if previewHighlight then
+		previewHighlight:Destroy()
+		previewHighlight = nil
+	end
+	if previewBillboard then
+		previewBillboard:Destroy()
+		previewBillboard = nil
+	end
+	hoveredBreakableId = nil
+end
+
+local function updatePreviewHighlight(breakableId: string?, model: Instance?)
+	if breakableId == hoveredBreakableId then
 		return
 	end
 
-	materialClone.Parent = Workspace
+	clearPreviewHighlight()
+	hoveredBreakableId = breakableId
 
-	-- Create tween to player
-	local tweenInfo = TweenInfo.new(
-		COLLECTION_DURATION,
-		Enum.EasingStyle.Exponential,
-		Enum.EasingDirection.Out
-	)
-
-	-- Tween position and scale (shrink using model Scale)
-	local targetCFrame = humanoidRootPart.CFrame
-	local targetScale = 0.1 -- Shrink to 10% of original size
-
-	-- Find the Scale value in the model (Roblox models have a Scale NumberValue)
-	local scaleValue = materialClone:FindFirstChild("Scale", true)
-
-	local positionTween = TweenService:Create(materialClone.PrimaryPart, tweenInfo, {
-		CFrame = targetCFrame
-	})
-
-	local scaleTween = nil
-	if scaleValue and scaleValue:IsA("NumberValue") then
-		scaleTween = TweenService:Create(scaleValue, tweenInfo, {
-			Value = scaleValue.Value * targetScale
-		})
+	if not breakableId or not model then
+		return
 	end
 
-	-- Play tweens
-	positionTween:Play()
-	if scaleTween then
-		scaleTween:Play()
+	-- Get target part for billboard
+	local targetPart
+	if model:IsA("BasePart") then
+		targetPart = model
+	elseif model:IsA("Model") and model.PrimaryPart then
+		targetPart = model.PrimaryPart
 	end
 
-	-- Destroy the clone after animation completes
-	task.delay(COLLECTION_DURATION, function()
-		materialClone:Destroy()
-	end)
+	-- Create highlight
+	local highlight = Instance.new("Highlight")
+	highlight.FillTransparency = 1
+	highlight.OutlineTransparency = 0.7
+	highlight.OutlineColor = Color3.new(0, 0, 0)
+	highlight.Adornee = model
+	highlight.Parent = model
+	previewHighlight = highlight
+
+	-- Create billboard with material name
+	if targetPart then
+		local breakable = breakableData[breakableId]
+		local materialType = breakable and breakable.materialType or "Unknown"
+		local matProps = MaterialData.GetProperties(materialType)
+		local displayName = matProps and matProps.displayName or materialType
+
+		local billboard = Instance.new("BillboardGui")
+		billboard.Size = UDim2.new(2, 0, 2, 0)
+		billboard.StudsOffset = Vector3.new(0, 3, 0)
+		billboard.Adornee = targetPart
+		billboard.AlwaysOnTop = true
+
+		local textLabel = Instance.new("TextLabel")
+		textLabel.Size = UDim2.new(1, 0, 1, 0)
+		textLabel.BackgroundTransparency = 1
+		textLabel.Text = displayName
+		textLabel.TextColor3 = Color3.new(1, 1, 1)
+		textLabel.TextStrokeTransparency = 0.5
+		textLabel.Font = Enum.Font.GothamBold
+		textLabel.TextScaled = true
+		textLabel.Parent = billboard
+
+		billboard.Parent = targetPart
+		previewBillboard = billboard
+	end
 end
 
--- Create material model instance at position
-local function createMaterialInstance(x: number, y: number, materialType: string): MaterialInstance?
-	if materialType == "" then return nil end
+local function updatePreview()
+	local breakableId, model = detectBreakableUnderCursor()
+	updatePreviewHighlight(breakableId, model)
+end
 
-	-- Get attachment position
-	local position = getAttachmentPosition(x, y)
-	if not position then
-		warn("Failed to get position for", x, y)
-		return nil
+--|| Breaking Functions ||--
+
+local function stopBreaking()
+	if not currentBreakingId then return end
+
+	currentBreakingId = nil
+	currentBreakingProgress = 0
+
+	stopShakeAnimation()
+	stopBreakingVFX()
+
+	BreakingService:StopBreaking()
+end
+
+local function startBreaking(breakableId: string)
+	if currentBreakingId == breakableId then return end
+
+	if currentBreakingId then
+		stopBreaking()
 	end
 
-	-- Find material in ReplicatedStorage
-	local materialsFolder = ReplicatedStorage:FindFirstChild("Assets")
-	if materialsFolder then
-		materialsFolder = materialsFolder:FindFirstChild("Materials")
+	currentBreakingId = breakableId
+	currentBreakingProgress = 0
+
+	-- Find model for VFX
+	local _, model = detectBreakableUnderCursor()
+	if model then
+		startShakeAnimation(model)
+		startBreakingVFX(model)
 	end
 
-	if not materialsFolder then
-		warn("Assets/Materials folder not found in ReplicatedStorage!")
-		return nil
+	BreakingService:StartBreaking(breakableId)
+end
+
+local function updateBreaking()
+	if not isMouseDown then
+		if currentBreakingId then
+			stopBreaking()
+		end
+		return
 	end
 
-	local materialTemplate = materialsFolder:FindFirstChild(materialType)
-	if not materialTemplate or not materialTemplate:IsA("Model") then
-		warn("Material model not found:", materialType)
-		return nil
+	local targetId = hoveredBreakableId
+
+	if not targetId or not canBreakHoveredObject() then
+		if currentBreakingId then
+			stopBreaking()
+		end
+		return
 	end
 
-	-- Clone the material
-	local materialModel = materialTemplate:Clone()
-
-	-- Set position
-	if materialModel.PrimaryPart then
-		materialModel:SetPrimaryPartCFrame(CFrame.new(position))
-	else
-		warn("Material model has no PrimaryPart:", materialType)
-		materialModel:Destroy()
-		return nil
+	if currentBreakingId ~= targetId then
+		startBreaking(targetId)
 	end
+end
 
-	materialModel.Parent = Workspace
+--|| Event Handlers ||--
 
-	-- Create floating animation
-	local floatTween = createFloatTween(materialModel, position)
-	floatTween:Play()
-
-	return {
-		model = materialModel,
-		baseTween = floatTween,
-		basePosition = position,
+local function onBreakableRegistered(data: {id: string, materialType: string, position: Vector3})
+	breakableData[data.id] = {
+		id = data.id,
+		materialType = data.materialType,
+		position = data.position,
 	}
 end
 
--- Remove material instance
-local function removeMaterialInstance(x: number, y: number)
-	if not materialInstances[x] or not materialInstances[x][y] then return end
+local function onBreakableUnregistered(breakableId: string)
+	breakableData[breakableId] = nil
 
-	local instance = materialInstances[x][y]
-	if instance then
-		if instance.baseTween then
-			instance.baseTween:Cancel()
-		end
-		if instance.model then
-			instance.model:Destroy()
-		end
-		materialInstances[x][y] = nil
+	if animatingBlocks[breakableId] then
+		animatingBlocks[breakableId]:Destroy()
+		animatingBlocks[breakableId] = nil
 	end
 end
 
--- Animate material destruction
-local function animateDestroy(x: number, y: number, isMatch: boolean)
-	local instance = materialInstances[x][y]
-	if not instance or not instance.model then return end
+local function onBreakingProgress(breakableId: string, progress: number)
+	if breakableId ~= currentBreakingId then return end
 
-	-- Cancel float tween
-	if instance.baseTween then
-		instance.baseTween:Cancel()
+	currentBreakingProgress = progress
+	updateShakeAnimation(progress)
+	updateBreakingVFX(progress)
+end
+
+local function onBreakingStopped(breakableId: string)
+	if breakableId == currentBreakingId then
+		stopBreaking()
+	end
+end
+
+local function onBreakableBroken(breakableId: string, dropItem: string, position: Vector3)
+	-- Clear preview if we were hovering this
+	if hoveredBreakableId == breakableId then
+		clearPreviewHighlight()
 	end
 
-	-- Create destruction animation (shrink and fade)
-	local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+	-- Stop breaking if we were breaking this
+	if currentBreakingId == breakableId then
+		stopBreaking()
+	end
 
-	-- Animate all parts
-	for _, part in ipairs(instance.model:GetDescendants()) do
-		if part:IsA("BasePart") then
-			local destroyTween = TweenService:Create(part, tweenInfo, {
-				Transparency = 1,
-				Size = part.Size * 0.1
-			})
-			destroyTween:Play()
+	-- Get color from material before removing from tracking
+	local materialType = breakableData[breakableId] and breakableData[breakableId].materialType
+	local burstColor = Color3.new(0.5, 0.5, 0.5) -- Default gray
+	if materialType then
+		local matProps = MaterialData.GetProperties(materialType)
+		if matProps and matProps.color then
+			burstColor = matProps.color
 		end
 	end
 
-	-- Remove after animation
-	task.delay(0.3, function()
-		removeMaterialInstance(x, y)
+	-- Remove from tracking
+	breakableData[breakableId] = nil
+
+	-- Play break VFX burst at position
+	task.spawn(function()
+		-- Create invisible 3x3x3 part for particle emission
+		local burstPart = Instance.new("Part")
+		burstPart.Name = "BreakBurst"
+		burstPart.Size = Vector3.new(3, 3, 3)
+		burstPart.Position = position
+		burstPart.Anchored = true
+		burstPart.CanCollide = false
+		burstPart.CanQuery = false
+		burstPart.Transparency = 1
+		burstPart.Parent = Workspace
+
+		-- Try to get Emit_50 from VFX folder
+		local vfxFolder = ReplicatedStorage:FindFirstChild("Assets")
+		if vfxFolder then vfxFolder = vfxFolder:FindFirstChild("VFX") end
+		if vfxFolder then vfxFolder = vfxFolder:FindFirstChild("Breaking") end
+		if vfxFolder then vfxFolder = vfxFolder:FindFirstChild("4x4") end
+
+		local emitter
+		if vfxFolder then
+			local emitterTemplate = vfxFolder:FindFirstChild("Emit_50")
+			if emitterTemplate and emitterTemplate:IsA("ParticleEmitter") then
+				emitter = emitterTemplate:Clone()
+				emitter.Color = ColorSequence.new(burstColor)
+				emitter.Parent = burstPart
+			end
+		end
+
+		-- Fallback if no VFX folder
+		if not emitter then
+			emitter = Instance.new("ParticleEmitter")
+			emitter.Color = ColorSequence.new(burstColor)
+			emitter.Size = NumberSequence.new(0.4, 0)
+			emitter.Lifetime = NumberRange.new(0.5, 1)
+			emitter.Speed = NumberRange.new(5, 10)
+			emitter.SpreadAngle = Vector2.new(180, 180)
+			emitter.Parent = burstPart
+		end
+
+		-- Emit burst
+		emitter:Emit(50)
+
+		-- Clean up after particles fade
+		task.delay(2, function()
+			if burstPart and burstPart.Parent then
+				burstPart:Destroy()
+			end
+		end)
 	end)
 end
 
--- Animate material falling
-local function animateFall(fromX: number, fromY: number, toX: number, toY: number)
-	local instance = materialInstances[fromX][fromY]
-	if not instance or not instance.model or not instance.model.PrimaryPart then return end
+-- Block spawn animation (from BreakingAreaService)
+local function onBlockAboutToSpawn(blockData: {id: string, materialType: string, position: Vector3})
+	-- Store data
+	breakableData[blockData.id] = {
+		id = blockData.id,
+		materialType = blockData.materialType,
+		position = blockData.position,
+	}
 
-	-- Cancel float tween
-	if instance.baseTween then
-		instance.baseTween:Cancel()
-	end
-
-	-- Get target position
-	local targetPosition = getAttachmentPosition(toX, toY)
-	if not targetPosition then return end
-
-	-- Calculate offset from current position to maintain model orientation
-	local currentCFrame = instance.model.PrimaryPart.CFrame
-	local targetCFrame = CFrame.new(targetPosition)
-
-	-- Animate fall using CFrame
-	local tweenInfo = TweenInfo.new(FALL_SPEED, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out)
-	local fallTween = TweenService:Create(instance.model.PrimaryPart, tweenInfo, {
-		CFrame = targetCFrame
-	})
-
-	fallTween:Play()
-
-	-- Update instance data
-	instance.basePosition = targetPosition
-	materialInstances[toX][toY] = instance
-	materialInstances[fromX][fromY] = nil
-
-	-- Restart float animation after fall
-	fallTween.Completed:Connect(function()
-		instance.baseTween = createFloatTween(instance.model, targetPosition)
-		if instance.baseTween then
-			instance.baseTween:Play()
-		end
+	-- Play spawn animation
+	task.spawn(function()
+		playSpawnAnimation(blockData)
 	end)
 end
 
--- Animate material spawning
-local function animateSpawn(x: number, y: number, materialType: string)
-	-- Create new instance
-	local instance = createMaterialInstance(x, y, materialType)
-	if not instance then
-		warn("Failed to create material instance for spawn at", x, y, materialType)
-		return
-	end
+local function onBlockSpawned(blockData: {id: string, materialType: string, position: Vector3})
+	-- Block is now fully spawned on server, animation should be done
+end
 
-	-- Store original properties before modifying
-	local originalProperties = {}
-	for _, part in ipairs(instance.model:GetDescendants()) do
-		if part:IsA("BasePart") then
-			originalProperties[part] = {
-				Size = part.Size,
-				Transparency = part.Transparency
-			}
-			-- Start small and invisible
-			part.Size = part.Size * 0.1
-			part.Transparency = 1
-		end
-	end
+--|| Input Handling ||--
 
-	-- Store in grid immediately
-	materialInstances[x][y] = instance
+local function onInputBegan(input: InputObject, gameProcessed: boolean)
+	if gameProcessed then return end
 
-	-- Animate spawn (grow and fade in)
-	local tweenInfo = TweenInfo.new(SPAWN_DURATION, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-
-	for part, props in pairs(originalProperties) do
-		local spawnTween = TweenService:Create(part, tweenInfo, {
-			Size = props.Size,
-			Transparency = props.Transparency
-		})
-		spawnTween:Play()
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		isMouseDown = true
 	end
 end
 
--- Initialize material instances from grid
-local function initializeMaterialInstances()
-	-- Clear existing instances
-	for x = 1, GRID_ROWS do
-		materialInstances[x] = {}
-		for y = 1, GRID_COLS do
-			removeMaterialInstance(x, y)
-		end
-	end
-
-	-- Create new instances
-	for x = 1, GRID_ROWS do
-		for y = 1, GRID_COLS do
-			if gridData[x] and gridData[x][y] and gridData[x][y] ~= "" then
-				materialInstances[x][y] = createMaterialInstance(x, y, gridData[x][y])
-			end
+local function onInputEnded(input: InputObject, gameProcessed: boolean)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		isMouseDown = false
+		if currentBreakingId then
+			stopBreaking()
 		end
 	end
 end
 
--- Update grid visualization
-local function updateGridVisualization(newGridData: {{string}})
-	if not newGridData then return end
+--|| Update Loop ||--
 
-	gridData = newGridData
+local function onHeartbeat(deltaTime: number)
+	updatePreview()
+	updateBreaking()
+	updateMiningAnimation()
 
-	-- Update all cells
-	for x = 1, GRID_ROWS do
-		for y = 1, GRID_COLS do
-			local oldMaterial = materialInstances[x] and materialInstances[x][y]
-			local newMaterialType = gridData[x] and gridData[x][y] or ""
-
-			if newMaterialType == "" then
-				-- Material removed
-				if oldMaterial then
-					removeMaterialInstance(x, y)
-				end
-			else
-				-- Material exists
-				if not oldMaterial then
-					-- New material spawned
-					materialInstances[x][y] = createMaterialInstance(x, y, newMaterialType)
-				end
-			end
-		end
+	if currentBreakingId and shakeModel then
+		updateShakeAnimation(currentBreakingProgress)
 	end
 end
 
--- Handle material grab
-local function handleMaterialGrabbed(x: number, y: number, materialType: string)
-	local instance = materialInstances[x][y]
-	if not instance or not instance.model then
-		warn("No material instance to grab at", x, y)
-		return
-	end
+--|| Knit Lifecycle ||--
 
-	-- Cancel float animation
-	if instance.baseTween then
-		instance.baseTween:Cancel()
-	end
-
-	-- Get player character
-	local character = player.Character
-	if not character then
-		warn("No character found")
-		return
-	end
-
-	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-	if not humanoidRootPart then
-		warn("No HumanoidRootPart found")
-		return
-	end
-
-	-- Get hold position (check for attachment or use default)
-	local holdCFrame
-	local holdAttachment = humanoidRootPart:FindFirstChild("HeldMaterialAttachment")
-	if holdAttachment and holdAttachment:IsA("Attachment") then
-		holdCFrame = humanoidRootPart.CFrame * holdAttachment.CFrame
-	else
-		-- Use default offset from MaterialData
-		holdCFrame = humanoidRootPart.CFrame * MaterialData.HoldConfig.defaultHoldOffset
-	end
-
-	-- Move model to hold position
-	if instance.model.PrimaryPart then
-		-- Unanchor the PrimaryPart so it can be welded to player
-		instance.model.PrimaryPart.Anchored = false
-
-		-- Set position
-		instance.model:SetPrimaryPartCFrame(holdCFrame)
-
-		-- Create weld to attach to player
-		local weld = Instance.new("WeldConstraint")
-		weld.Part0 = humanoidRootPart
-		weld.Part1 = instance.model.PrimaryPart
-		weld.Parent = instance.model.PrimaryPart
-
-		heldMaterialModel = instance.model
-		heldMaterialWeld = weld
-	end
-
-	print(string.format("Grabbed material %s at (%d, %d)", materialType, x, y))
+function BreakingController:KnitInit()
+	breakingZone = getBreakingZone()
 end
-
--- Handle material placement
-local function handleMaterialPlaced(fromX: number, fromY: number, toX: number, toY: number)
-	-- Destroy weld
-	if heldMaterialWeld then
-		heldMaterialWeld:Destroy()
-		heldMaterialWeld = nil
-	end
-
-	-- The material swap happens on server, so we just need to move visuals
-	local fromInstance = materialInstances[fromX][fromY]
-	local toInstance = materialInstances[toX][toY]
-
-	-- Get target positions
-	local fromTargetPos = getAttachmentPosition(toX, toY)
-	local toTargetPos = getAttachmentPosition(fromX, fromY)
-
-	-- Swap the grid data to match server
-	local tempMaterial = gridData[fromX][fromY]
-	gridData[fromX][fromY] = gridData[toX][toY]
-	gridData[toX][toY] = tempMaterial
-
-	-- Clear the old positions temporarily
-	materialInstances[fromX][fromY] = nil
-	materialInstances[toX][toY] = nil
-
-	-- Move the held material to its new position
-	if fromInstance and fromInstance.model and fromInstance.model.PrimaryPart and fromTargetPos then
-		-- Re-anchor the part after unwelding
-		fromInstance.model.PrimaryPart.Anchored = true
-
-		-- Animate to new position
-		local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-		local tween = TweenService:Create(fromInstance.model.PrimaryPart, tweenInfo, {
-			CFrame = CFrame.new(fromTargetPos)
-		})
-		tween:Play()
-
-		fromInstance.basePosition = fromTargetPos
-
-		-- Restart float animation after placement
-		tween.Completed:Connect(function()
-			fromInstance.baseTween = createFloatTween(fromInstance.model, fromTargetPos)
-			if fromInstance.baseTween then
-				fromInstance.baseTween:Play()
-			end
-		end)
-
-		-- Update to new position
-		materialInstances[toX][toY] = fromInstance
-	end
-
-	-- Move the other material if it exists
-	if toInstance and toInstance.model and toInstance.model.PrimaryPart and toTargetPos then
-		-- Animate to new position
-		local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-		local tween = TweenService:Create(toInstance.model.PrimaryPart, tweenInfo, {
-			CFrame = CFrame.new(toTargetPos)
-		})
-		tween:Play()
-
-		toInstance.basePosition = toTargetPos
-
-		-- Restart float animation
-		tween.Completed:Connect(function()
-			toInstance.baseTween = createFloatTween(toInstance.model, toTargetPos)
-			if toInstance.baseTween then
-				toInstance.baseTween:Play()
-			end
-		end)
-
-		-- Update to new position
-		materialInstances[fromX][fromY] = toInstance
-	end
-
-	heldMaterialModel = nil
-
-	print(string.format("Placed material from (%d, %d) to (%d, %d)", fromX, fromY, toX, toY))
-	print(string.format("Client grid after swap: (%d,%d)=%s, (%d,%d)=%s",
-		fromX, fromY, gridData[fromX][fromY] or "nil",
-		toX, toY, gridData[toX][toY] or "nil"))
-end
-
---|| Functions ||--
 
 function BreakingController:KnitStart()
 	BreakingService = Knit.GetService("BreakingService")
+	BreakingAreaService = Knit.GetService("BreakingAreaService")
+	InventoryController = Knit.GetController("InventoryController")
 
-	-- Listen for grid updates
-	BreakingService.GridUpdated:Connect(function(newGridData)
-		updateGridVisualization(newGridData)
+	-- Connect to BreakingService events
+	BreakingService.BreakableRegistered:Connect(onBreakableRegistered)
+	BreakingService.BreakableUnregistered:Connect(onBreakableUnregistered)
+	BreakingService.BreakingProgress:Connect(onBreakingProgress)
+	BreakingService.BreakingStopped:Connect(onBreakingStopped)
+	BreakingService.BreakableBroken:Connect(onBreakableBroken)
+
+	-- Connect to BreakingAreaService events (for spawn animations)
+	BreakingAreaService.BlockAboutToSpawn:Connect(onBlockAboutToSpawn)
+	BreakingAreaService.BlockSpawned:Connect(onBlockSpawned)
+
+	-- Input
+	UserInputService.InputBegan:Connect(onInputBegan)
+	UserInputService.InputEnded:Connect(onInputEnded)
+
+	-- Update loop
+	RunService.Heartbeat:Connect(onHeartbeat)
+
+	-- Get initial breakables
+	task.spawn(function()
+		local breakables = BreakingService:GetBreakables()
+		if breakables and type(breakables) == "table" then
+			for id, data in pairs(breakables) do
+				if type(data) == "table" then
+					breakableData[id] = {
+						id = id,
+						materialType = data.materialType,
+						position = data.position,
+					}
+				end
+			end
+		end
 	end)
-
-	-- Listen for material destroyed
-	BreakingService.MaterialDestroyed:Connect(function(x, y, isMatch)
-		animateDestroy(x, y, isMatch)
-	end)
-
-	-- Listen for material collected (for tween animation)
-	BreakingService.MaterialCollected:Connect(function(x, y, materialType)
-		playCollectionAnimation(x, y, materialType)
-	end)
-
-	-- Listen for material moved/fallen
-	BreakingService.MaterialMoved:Connect(function(fromX, fromY, toX, toY)
-		animateFall(fromX, fromY, toX, toY)
-	end)
-
-	-- Listen for material spawned
-	BreakingService.MaterialSpawned:Connect(function(x, y, materialType)
-		print(string.format("Client received MaterialSpawned: x=%d, y=%d, material=%s", x, y, materialType))
-		task.wait(0.2) -- Small delay before spawning
-		animateSpawn(x, y, materialType)
-	end)
-
-	-- Listen for material grabbed
-	BreakingService.MaterialGrabbed:Connect(function(x, y, materialType)
-		handleMaterialGrabbed(x, y, materialType)
-	end)
-
-	-- Listen for material placed
-	BreakingService.MaterialPlaced:Connect(function(fromX, fromY, toX, toY)
-		handleMaterialPlaced(fromX, fromY, toX, toY)
-	end)
-
-	-- Initialize grid
-	task.wait(2) -- Wait for character to load
-	local success, initialGrid = BreakingService:GetGrid():await()
-	if success and initialGrid then
-		gridData = initialGrid
-		initializeMaterialInstances()
-	end
 end
 
 return BreakingController

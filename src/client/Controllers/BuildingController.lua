@@ -27,6 +27,7 @@ local PREVIEW_TRANSPARENCY = 0.7
 local WALLLIMIT_TRANSPARENCY  = 0.9
 local HIGHLIGHT_VALID_COLOR = Color3.fromRGB(230, 230, 230) -- White greyish
 local HIGHLIGHT_INVALID_COLOR = Color3.fromRGB(255, 0, 0) -- Red
+local HIGHLIGHT_REMOVAL_COLOR = Color3.fromRGB(255, 80, 80) -- Reddish for removal
 local GRID_SIZE = 2 -- 2-stud grid (same as server)
 
 -- Services (to be initialized)
@@ -41,6 +42,11 @@ local previewHighlights = {} -- Array of highlights (one per part)
 local currentPosition = nil
 local isValidPlacement = false
 local wallLimitTweens = {} -- Array of tweens for WallLimit pulsing animation
+
+-- Removal mode state
+local removalMode = false
+local hoveredBlock = nil -- Currently hovered block model
+local removalHighlight = nil -- Highlight for the hovered block
 
 -- References
 local buildingZone = nil
@@ -131,6 +137,97 @@ local function stopWallLimitPulsing()
 	local wallLimits = getWallLimitParts()
 	for _, wallPart in ipairs(wallLimits) do
 		wallPart.Transparency = 1
+	end
+end
+
+-- Detect block under cursor for removal
+local function detectBlockUnderCursor(): Model?
+	local camera = Workspace.CurrentCamera
+	local mouseRay = camera:ScreenPointToRay(mouse.X, mouse.Y)
+	local rayOrigin = mouseRay.Origin
+	local rayDirection = mouseRay.Direction * 1000
+
+	-- Create raycast params
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	raycastParams.FilterDescendantsInstances = {player.Character}
+
+	-- Perform raycast
+	local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+
+	if not raycastResult then
+		return nil
+	end
+
+	local hitInstance = raycastResult.Instance
+
+	-- Check if hit instance is inside BuildingZone
+	local zone = getBuildingZone()
+	if not zone then
+		return nil
+	end
+
+	-- Traverse up to find if this is part of a block model in BuildingZone
+	local current = hitInstance
+	while current and current ~= Workspace do
+		if current.Parent == zone then
+			-- Found a child of BuildingZone
+			-- Check if it has BlockId (placed blocks have this)
+			local blockId = current:FindFirstChild("BlockId")
+			local playerId = current:FindFirstChild("PlayerId")
+
+			if blockId and playerId and playerId.Value == player.UserId then
+				-- This is a block placed by this player
+				return current
+			end
+			break
+		end
+		current = current.Parent
+	end
+
+	return nil
+end
+
+-- Create or update highlight for block removal
+local function updateRemovalHighlight(block: Model?)
+	-- Remove existing highlight
+	if removalHighlight then
+		removalHighlight:Destroy()
+		removalHighlight = nil
+	end
+
+	-- If no block, we're done
+	if not block then
+		hoveredBlock = nil
+		return
+	end
+
+	hoveredBlock = block
+
+	-- Create new highlight
+	local highlight = Instance.new("Highlight")
+	highlight.FillTransparency = 0.5
+	highlight.OutlineTransparency = 0
+	highlight.OutlineColor = HIGHLIGHT_REMOVAL_COLOR
+	highlight.FillColor = HIGHLIGHT_REMOVAL_COLOR
+	highlight.Adornee = block
+	highlight.Parent = block
+
+	removalHighlight = highlight
+end
+
+-- Update removal mode (detect and highlight blocks)
+local function updateRemovalMode()
+	if not removalMode then
+		return
+	end
+
+	-- Detect block under cursor
+	local block = detectBlockUnderCursor()
+
+	-- Update highlight (only if changed)
+	if block ~= hoveredBlock then
+		updateRemovalHighlight(block)
 	end
 end
 -- Simple client-side bounds check (for preview color only)
@@ -324,22 +421,14 @@ local function updatePreview()
 	local areaPosition = area.Position
 	local areaOrigin = Vector3.new(areaPosition.X, areaPosition.Y - 32, areaPosition.Z)
 
-	-- Debug what we're hitting
-	print("[BuildingController] Hit instance:", hitInstance.Name, "at position:", hitPosition)
-	print("[BuildingController] Hit normal:", hitNormal)
-	print("[BuildingController] BuildingArea Part.Position:", areaPosition)
-	print("[BuildingController] BuildingArea Origin (Y-32):", areaOrigin)
 
 	-- Calculate target position (on the surface)
 	-- Add half the block size in the direction of the normal to place block on surface
 	local targetPosition = hitPosition + (hitNormal * (blockSize.Y / 2))
 
-	print("[BuildingController] Target position (before snap):", targetPosition)
 
 	-- Snap to grid (client-side, no server call needed)
 	local snappedPosition = snapToGrid(targetPosition)
-
-	print("[BuildingController] Snapped position:", snappedPosition)
 
 	-- Clamp position to BuildingArea bounds
 	-- Convert to relative position first
@@ -360,7 +449,6 @@ local function updatePreview()
 	-- Snap the clamped position to grid again (in case clamping moved it off-grid)
 	clampedPosition = snapToGrid(clampedPosition)
 
-	print("[BuildingController] Clamped position:", clampedPosition)
 
 	currentPosition = clampedPosition
 
@@ -368,9 +456,6 @@ local function updatePreview()
 	isValidPlacement = isWithinBounds(clampedPosition, blockSize, areaOrigin)
 
 	-- Calculate and display relative position (offset from BuildingArea origin)
-	local clampedRelativePosition = clampedPosition - areaOrigin
-	print("[BuildingController] Relative Position:", clampedRelativePosition, "Valid:", isValidPlacement)
-	print("---")
 
 	-- Update preview position
 	if previewModel:IsA("Model") and previewModel.PrimaryPart then
@@ -420,7 +505,6 @@ local function startBuildingMode(itemName: string)
 	-- Create highlights (one per part)
 	previewHighlights = createHighlight(previewModel)
 
-	print("Building mode started for:", itemName)
 end
 
 -- Stop building mode
@@ -451,20 +535,68 @@ function stopBuildingMode()
 	end
 	previewHighlights = {}
 
-	print("Building mode stopped")
+end
+
+-- Start removal mode
+local function startRemovalMode()
+	if removalMode then
+		return
+	end
+
+	-- Stop building mode if active
+	if buildingMode then
+		stopBuildingMode()
+	end
+
+	removalMode = true
+
+	-- Start pulsing animation for WallLimit parts (same as building mode)
+	startWallLimitPulsing()
+
+	print("Removal mode started")
+end
+
+-- Stop removal mode
+local function stopRemovalMode()
+	if not removalMode then
+		return
+	end
+
+	removalMode = false
+
+	-- Stop pulsing animation and hide WallLimit parts
+	stopWallLimitPulsing()
+
+	-- Remove highlight
+	if removalHighlight then
+		removalHighlight:Destroy()
+		removalHighlight = nil
+	end
+
+	hoveredBlock = nil
+
+	print("Removal mode stopped")
 end
 
 -- Handle item equipped
 local function onItemEquipped(slot: number, itemName: string)
-	-- Check if item is a block
 	local itemConfig = ItemData.GetItem(itemName)
-	if itemConfig and itemConfig.type == "Block" and itemConfig.blockSize then
+
+	-- Check if item is the Hammer (removal tool)
+	if itemConfig and itemConfig.isRemovalTool then
+		-- Start removal mode
+		startRemovalMode()
+	-- Check if item is a block
+	elseif itemConfig and itemConfig.type == "Block" and itemConfig.blockSize then
 		-- Start building mode
 		startBuildingMode(itemName)
 	else
-		-- Not a block, stop building mode if active
+		-- Not a block or removal tool, stop both modes if active
 		if buildingMode then
 			stopBuildingMode()
+		end
+		if removalMode then
+			stopRemovalMode()
 		end
 	end
 end
@@ -475,10 +607,36 @@ local function onItemUnequipped()
 	if buildingMode then
 		stopBuildingMode()
 	end
+	-- Stop removal mode
+	if removalMode then
+		stopRemovalMode()
+	end
 end
 
--- Handle mouse click for placement
+-- Handle mouse click for placement or removal
 local function onMouseClick()
+	-- Handle removal mode
+	if removalMode and hoveredBlock then
+		-- Get block ID
+		local blockId = hoveredBlock:FindFirstChild("BlockId")
+		if blockId and blockId.Value then
+			-- Call BuildingService to remove the block
+			BuildingService:RemoveBlock(blockId.Value)
+				:andThen(function(success, itemName)
+					if success then
+						print("Block removed successfully! Received:", itemName)
+					else
+						warn("Failed to remove block")
+					end
+				end)
+				:catch(function(err)
+					warn("Error removing block:", err)
+				end)
+		end
+		return
+	end
+
+	-- Handle building mode
 	if not buildingMode or not currentPosition or not currentBlockItem then
 		return
 	end
@@ -487,7 +645,6 @@ local function onMouseClick()
 	BuildingService:PlaceBlock(currentPosition, currentBlockItem)
 		:andThen(function(success)
 			if success then
-				print("Block placed successfully!")
 			else
 				warn("Failed to place block - server validation failed")
 			end
@@ -501,9 +658,9 @@ end
 local function onInputBegan(input, gameProcessed)
 	if gameProcessed then return end
 
-	-- Left click to place block
+	-- Left click to place block or remove block
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		if buildingMode then
+		if buildingMode or removalMode then
 			onMouseClick()
 		end
 	end
@@ -542,10 +699,12 @@ function BuildingController:KnitStart()
 	InventoryService.ItemEquipped:Connect(onItemEquipped)
 	InventoryService.ItemUnequipped:Connect(onItemUnequipped)
 
-	-- Update preview every frame
+	-- Update preview and removal mode every frame
 	RunService.RenderStepped:Connect(function()
 		if buildingMode then
 			updatePreview()
+		elseif removalMode then
+			updateRemovalMode()
 		end
 	end)
 
