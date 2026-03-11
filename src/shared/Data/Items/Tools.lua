@@ -34,7 +34,7 @@ local Tools = {
 		modelPath = "Assets.Items.WoodenPickaxe",
 		-- Breaking properties
 		isBreakingTool = true,
-		breakSpeed = 30,
+		breakSpeed = 50,
 		toolTier = "Wood",
 		-- For testing: bypass tier check and break anything
 		canBreakAll = true,

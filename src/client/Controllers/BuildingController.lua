@@ -55,13 +55,33 @@ local buildingAreaInfo = nil
 
 --|| Private Functions ||--
 
--- Snap position to 2-stud grid (client-side version)
-local function snapToGrid(position: Vector3): Vector3
+-- Snap position to grid based on block size (client-side version)
+-- 4x4x4 blocks (half=2) snap to even positions: 2, 4, 6...
+-- 2x2x2 blocks (half=1) snap to odd positions: 1, 3, 5...
+local function snapToGridForBlockSize(position: Vector3, blockSize: Vector3): Vector3
+	local halfSize = blockSize / 2
+
+	local function snapAxis(value, halfBlockSize)
+		if halfBlockSize % GRID_SIZE == 0 then
+			-- Block half-size is multiple of grid (4x4x4), snap to grid multiples
+			return math.round(value / GRID_SIZE) * GRID_SIZE
+		else
+			-- Block half-size is not multiple of grid (2x2x2), snap to offset grid
+			local gridHalf = GRID_SIZE / 2
+			return math.round((value - gridHalf) / GRID_SIZE) * GRID_SIZE + gridHalf
+		end
+	end
+
 	return Vector3.new(
-		math.round(position.X / GRID_SIZE) * GRID_SIZE,
-		math.round(position.Y / GRID_SIZE) * GRID_SIZE,
-		math.round(position.Z / GRID_SIZE) * GRID_SIZE
+		snapAxis(position.X, halfSize.X),
+		snapAxis(position.Y, halfSize.Y),
+		snapAxis(position.Z, halfSize.Z)
 	)
+end
+
+-- Legacy snap function (defaults to 4x4x4 block size)
+local function snapToGrid(position: Vector3): Vector3
+	return snapToGridForBlockSize(position, Vector3.new(4, 4, 4))
 end
 
 -- Get building zone references
@@ -426,9 +446,8 @@ local function updatePreview()
 	-- Add half the block size in the direction of the normal to place block on surface
 	local targetPosition = hitPosition + (hitNormal * (blockSize.Y / 2))
 
-
-	-- Snap to grid (client-side, no server call needed)
-	local snappedPosition = snapToGrid(targetPosition)
+	-- Snap to grid based on block size (client-side, no server call needed)
+	local snappedPosition = snapToGridForBlockSize(targetPosition, blockSize)
 
 	-- Clamp position to BuildingArea bounds
 	-- Convert to relative position first
@@ -446,8 +465,8 @@ local function updatePreview()
 		areaOrigin.Z + clampedRelativeZ
 	)
 
-	-- Snap the clamped position to grid again (in case clamping moved it off-grid)
-	clampedPosition = snapToGrid(clampedPosition)
+	-- Snap the clamped position to grid again based on block size (in case clamping moved it off-grid)
+	clampedPosition = snapToGridForBlockSize(clampedPosition, blockSize)
 
 
 	currentPosition = clampedPosition

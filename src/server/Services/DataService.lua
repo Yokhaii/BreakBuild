@@ -9,7 +9,7 @@ local Players = game:GetService("Players")
 local ServerModules = script.Parent.Parent.Modules
 local ProfileService = require(ServerModules.ProfileService)
 local ProfileTemplate = require(script.Parent.Parent.Constants.DataTemplate)
-local ProfileStore = ProfileService.GetProfileStore("DataTest_1_04", ProfileTemplate)
+local ProfileStore = ProfileService.GetProfileStore("DataTest_1_05", ProfileTemplate)
 
 -- DataService
 local DataService = Knit.CreateService({

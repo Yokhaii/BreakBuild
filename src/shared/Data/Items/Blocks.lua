@@ -53,6 +53,19 @@ local Blocks = {
 		blockSize = Vector3.new(4, 4, 4),
 		buildingPartPath = "ReplicatedStorage.Assets.BuildingParts.Log",
 	},
+
+	SprucePlank = {
+		name = "SprucePlank",
+		displayName = "Spruce Plank",
+		type = "Block",
+		stackable = true,
+		maxStack = 64,
+		dropable = true,
+		description = "Wooden plank made from spruce logs",
+		modelPath = "ReplicatedStorage.Assets.Items.SprucePlank",
+		blockSize = Vector3.new(2, 2, 2),
+		buildingPartPath = "ReplicatedStorage.Assets.BuildingParts.SprucePlank",
+	},
 }
 
 return Blocks

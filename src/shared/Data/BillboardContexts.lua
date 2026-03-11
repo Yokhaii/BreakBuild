@@ -14,27 +14,26 @@ local Knit = require(Packages.Knit)
 local BillboardContexts = {}
 
 --[[
-	Example Context: CuttingLog
-	Used when player is near a log that can be cut
+	Context: CuttingLog
+	Used when player is near the CuttingLog station
+	Cuts logs from inventory into SprucePlanks (1 Log = 4 SprucePlank)
 ]]
 BillboardContexts.CuttingLog = {
 	Options = {
 		{
 			Text = "Cut Log",
 			Callback = function(player, data)
-				-- Example: Call a server service to cut one log
-				-- local WoodCuttingService = Knit.GetService("WoodCuttingService")
-				-- WoodCuttingService:CutLog(data.LogPart)
-				print("Cut Log clicked for player:", player.Name)
+				-- Call server to cut one log into planks
+				local CutLogService = Knit.GetService("CutLogService")
+				CutLogService:CutLog()
 			end,
 		},
 		{
 			Text = "Cut All Logs",
 			Callback = function(player, data)
-				-- Example: Call a server service to cut all logs in area
-				-- local WoodCuttingService = Knit.GetService("WoodCuttingService")
-				-- WoodCuttingService:CutAllLogs(data.Position)
-				print("Cut All Logs clicked for player:", player.Name)
+				-- Call server to cut all logs into planks
+				local CutLogService = Knit.GetService("CutLogService")
+				CutLogService:CutAllLogs()
 			end,
 		},
 	},

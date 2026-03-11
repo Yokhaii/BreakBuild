@@ -53,10 +53,12 @@ local function getBuildingZone()
 	return buildingZone, buildingArea, grassPart
 end
 
--- Snap position to 2-stud grid
-local function snapToGrid(position: Vector3): Vector3?
+-- Snap position to grid based on block size
+-- 4x4x4 blocks (half=2) snap to even positions: 2, 4, 6...
+-- 2x2x2 blocks (half=1) snap to odd positions: 1, 3, 5...
+local function snapToGridForBlockSize(position: Vector3, blockSize: Vector3): Vector3?
 	if not position then
-		warn("snapToGrid: position is nil")
+		warn("snapToGridForBlockSize: position is nil")
 		return nil
 	end
 
@@ -67,20 +69,39 @@ local function snapToGrid(position: Vector3): Vector3?
 	elseif typeof(position) == "Vector3" then
 		x, y, z = position.X, position.Y, position.Z
 	else
-		warn("snapToGrid: invalid position type:", typeof(position))
+		warn("snapToGridForBlockSize: invalid position type:", typeof(position))
 		return nil
 	end
 
 	if not x or not y or not z then
-		warn("snapToGrid: position has nil components")
+		warn("snapToGridForBlockSize: position has nil components")
 		return nil
 	end
 
+	local halfSize = blockSize / 2
+
+	-- Snap each axis based on whether block half-size is a multiple of GRID_SIZE
+	local function snapAxis(value, halfBlockSize)
+		if halfBlockSize % GRID_SIZE == 0 then
+			-- Block half-size is multiple of grid (4x4x4), snap to grid multiples
+			return math.round(value / GRID_SIZE) * GRID_SIZE
+		else
+			-- Block half-size is not multiple of grid (2x2x2), snap to offset grid
+			local gridHalf = GRID_SIZE / 2
+			return math.round((value - gridHalf) / GRID_SIZE) * GRID_SIZE + gridHalf
+		end
+	end
+
 	return Vector3.new(
-		math.round(x / GRID_SIZE) * GRID_SIZE,
-		math.round(y / GRID_SIZE) * GRID_SIZE,
-		math.round(z / GRID_SIZE) * GRID_SIZE
+		snapAxis(x, halfSize.X),
+		snapAxis(y, halfSize.Y),
+		snapAxis(z, halfSize.Z)
 	)
+end
+
+-- Legacy snap function (for backwards compatibility)
+local function snapToGrid(position: Vector3): Vector3?
+	return snapToGridForBlockSize(position, Vector3.new(4, 4, 4))
 end
 
 -- Convert world position to grid coordinates
@@ -129,13 +150,16 @@ local function isWithinBounds(position: Vector3, blockSize: Vector3): boolean
 	-- Calculate relative position
 	local relativePos = position - areaOrigin
 	local halfBlockSize = blockSize / 2
-
 	-- Block edges in relative space
 	local blockMin = relativePos - halfBlockSize
 	local blockMax = relativePos + halfBlockSize
 
 	-- BuildingArea bounds (relative to origin at floor)
 	-- X/Z: -32 to +32, Y: 0 to 64
+	print(blockMin, blockMax)
+	print( blockMin.X >= -32 and blockMax.X <= 32,
+	       blockMin.Y >= 0 and blockMax.Y <= 64,
+	       blockMin.Z >= -32 and blockMax.Z <= 32)
 	return blockMin.X >= -32 and blockMax.X <= 32 and
 	       blockMin.Y >= 0 and blockMax.Y <= 64 and
 	       blockMin.Z >= -32 and blockMax.Z <= 32
@@ -200,8 +224,9 @@ local function isOnGround(position: Vector3, blockSize: Vector3): boolean
 	local grassTop = grass.Position.Y + (grass.Size.Y / 2)
 	local blockBottom = position.Y - (blockSize.Y / 2)
 
-	-- Block is on ground if its bottom aligns with grass top (within grid tolerance)
-	return math.abs(blockBottom - grassTop) < GRID_SIZE
+	-- Block is on ground if its bottom aligns with grass top (within small tolerance)
+	-- Use a small tolerance (0.1) instead of GRID_SIZE for precise ground detection
+	return math.abs(blockBottom - grassTop) < 0.5
 end
 
 -- Get blocks at a specific grid position (checking for support)
@@ -310,26 +335,73 @@ local function hasProperSupport(player: Player, position: Vector3, blockSize: Ve
 	return true -- All cells have support
 end
 
--- Check if a block has at least one adjacent neighbor
+-- Check if a block has at least one adjacent neighbor (including above/below)
+-- Uses AABB edge touching detection to work with mixed block sizes
 local function hasAdjacentBlock(player: Player, position: Vector3, blockSize: Vector3): boolean
 	local buildingData = getBuildingData(player)
 	if not buildingData then return false end
 
-	local gridPos = worldToGrid(position)
-	local gridSize = worldToGrid(blockSize)
+	-- Get BuildingArea to convert relative → world position
+	local _, area, _ = getBuildingZone()
+	if not area then return false end
 
-	-- Check 4 horizontal directions (left, right, forward, back)
-	local directions = {
-		Vector3.new(-gridSize.X, 0, 0), -- Left
-		Vector3.new(gridSize.X, 0, 0),  -- Right
-		Vector3.new(0, 0, -gridSize.Z), -- Back
-		Vector3.new(0, 0, gridSize.Z),  -- Forward
-	}
+	local areaPosition = area.Position
+	local areaOrigin = Vector3.new(areaPosition.X, areaPosition.Y - 32, areaPosition.Z)
 
-	for _, dir in ipairs(directions) do
-		local checkPos = gridPos + dir
-		local blocks = getBlocksAt(player, checkPos.X, checkPos.Y, checkPos.Z)
-		if #blocks > 0 then
+	local halfSize = blockSize / 2
+	local newBlockMin = position - halfSize
+	local newBlockMax = position + halfSize
+
+	-- Small tolerance for edge touching detection
+	local TOUCH_TOLERANCE = 0.1
+
+	for _, block in ipairs(buildingData.PlacedBlocks) do
+		local existingPos
+		if block.relativePosition then
+			local relativePos = Vector3.new(
+				block.relativePosition.x,
+				block.relativePosition.y,
+				block.relativePosition.z
+			)
+			existingPos = areaOrigin + relativePos
+		elseif block.position then
+			existingPos = Vector3.new(block.position.x, block.position.y, block.position.z)
+		else
+			continue
+		end
+
+		local existingSize = Vector3.new(block.size.x, block.size.y, block.size.z)
+		local existingHalfSize = existingSize / 2
+		local existingMin = existingPos - existingHalfSize
+		local existingMax = existingPos + existingHalfSize
+
+		-- Check if blocks are touching (edges are within tolerance)
+		-- Two blocks are adjacent if they share a face (one axis edges touch, other two axes overlap)
+
+		-- Check X-axis adjacency (left/right touching)
+		local xTouching = math.abs(newBlockMax.X - existingMin.X) < TOUCH_TOLERANCE or
+		                  math.abs(newBlockMin.X - existingMax.X) < TOUCH_TOLERANCE
+		local yOverlap = newBlockMin.Y < existingMax.Y and newBlockMax.Y > existingMin.Y
+		local zOverlap = newBlockMin.Z < existingMax.Z and newBlockMax.Z > existingMin.Z
+
+		if xTouching and yOverlap and zOverlap then
+			return true
+		end
+
+		-- Check Y-axis adjacency (top/bottom touching)
+		local yTouching = math.abs(newBlockMax.Y - existingMin.Y) < TOUCH_TOLERANCE or
+		                  math.abs(newBlockMin.Y - existingMax.Y) < TOUCH_TOLERANCE
+		local xOverlap = newBlockMin.X < existingMax.X and newBlockMax.X > existingMin.X
+
+		if yTouching and xOverlap and zOverlap then
+			return true
+		end
+
+		-- Check Z-axis adjacency (front/back touching)
+		local zTouching = math.abs(newBlockMax.Z - existingMin.Z) < TOUCH_TOLERANCE or
+		                  math.abs(newBlockMin.Z - existingMax.Z) < TOUCH_TOLERANCE
+
+		if zTouching and xOverlap and yOverlap then
 			return true
 		end
 	end
@@ -359,8 +431,20 @@ local function hasGroundConnection(player: Player, position: Vector3, blockSize:
 	local areaOrigin = Vector3.new(areaPosition.X, areaPosition.Y - 32, areaPosition.Z)
 
 	-- Flood fill to find if any connected block reaches ground
+	-- Start from adjacent positions of the new block (since the new block isn't placed yet)
 	local visited = {}
-	local queue = {worldToGrid(position)}
+	local gridPos = worldToGrid(position)
+	local gridSize = worldToGrid(blockSize)
+
+	-- Initialize queue with all 6 adjacent positions (the new block connects to these)
+	local queue = {
+		gridPos + Vector3.new(-gridSize.X, 0, 0), -- Left
+		gridPos + Vector3.new(gridSize.X, 0, 0),  -- Right
+		gridPos + Vector3.new(0, 0, -gridSize.Z), -- Back
+		gridPos + Vector3.new(0, 0, gridSize.Z),  -- Forward
+		gridPos + Vector3.new(0, gridSize.Y, 0),  -- Up
+		gridPos + Vector3.new(0, -gridSize.Y, 0), -- Down
+	}
 
 	while #queue > 0 do
 		local current = table.remove(queue, 1)
@@ -435,8 +519,8 @@ function BuildingService:CanPlaceBlock(player: Player, position: Vector3, itemNa
 
 	local blockSize = itemConfig.blockSize
 
-	-- Snap position to grid
-	local snappedPos = snapToGrid(position)
+	-- Snap position to grid based on block size
+	local snappedPos = snapToGridForBlockSize(position, blockSize)
 	if not snappedPos then
 		return false, "Invalid position"
 	end
@@ -483,14 +567,14 @@ function BuildingService:PlaceBlock(player: Player, position: Vector3, itemName:
 	-- Get item config
 	local itemConfig = ItemData.GetItem(itemName)
 	local blockSize = itemConfig.blockSize
-	local snappedPos = snapToGrid(position)
+	local snappedPos = snapToGridForBlockSize(position, blockSize)
 
 	if not snappedPos then
 		warn("[BuildingService] Invalid position for block placement")
 		return false
 	end
 
-	print("[BuildingService] Snapped position:", snappedPos)
+	print("[BuildingService] Snapped position:", snappedPos, "for block size:", blockSize)
 
 	-- Check if player has the item equipped
 	local inventory = InventoryService:GetInventory(player)
@@ -755,9 +839,18 @@ function BuildingService:LoadPlacedBlocks(player: Player)
 	end
 end
 
--- Get snapped position for preview
-function BuildingService.Client:GetSnappedPosition(player: Player, position: Vector3)
-	local snapped = snapToGrid(position)
+-- Get snapped position for preview (now requires itemName for proper grid alignment)
+function BuildingService.Client:GetSnappedPosition(player: Player, position: Vector3, itemName: string?)
+	-- Get block size for proper snapping
+	local blockSize = Vector3.new(4, 4, 4) -- Default to 4x4x4
+	if itemName then
+		local itemConfig = ItemData.GetItem(itemName)
+		if itemConfig and itemConfig.blockSize then
+			blockSize = itemConfig.blockSize
+		end
+	end
+
+	local snapped = snapToGridForBlockSize(position, blockSize)
 	if not snapped then
 		return nil
 	end
