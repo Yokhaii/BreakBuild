@@ -8,17 +8,17 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
 
--- Directions
+-- Directories
 local Applications = StarterPlayer.StarterPlayerScripts.Client.Roact.Applications
 local Contexts = StarterPlayer.StarterPlayerScripts.Client.Roact.Contexts
 local AllowedApplicationsContext = require(Contexts.AllowedApplicationsContext)
-local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
-local Contexts = StarterPlayer.StarterPlayerScripts.Client.Roact.Contexts
 local ContextStack = require(Contexts.ContextStack)
+local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
 
 -- Modules
 local Roact = require(ReplicatedStorage.Packages.Roact)
 local HUD = require(Applications.HUD.Application)
+local BlueprintApplication = require(Applications.Blueprint.Application)
 
 --local GlobalHoveredFrame = require(Applications.GlobalHoveredFrame.Application)
 
@@ -40,6 +40,7 @@ local function GameFrame()
 			ResetOnSpawn = false,
 		}, {
 			HUD = Roact.createElement(HUD),
+			Blueprint = Roact.createElement(BlueprintApplication),
 		}),
 	})
 end

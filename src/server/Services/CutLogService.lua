@@ -31,16 +31,24 @@ local PLANKS_PER_LOG = 4
 local function countLogs(inventory)
 	local totalLogs = 0
 
-	-- Check hotbar
-	for slot = 1, 10 do
-		local item = inventory.Hotbar[slot]
+	-- Check BreakHotbar
+	for slot = 1, 6 do
+		local item = inventory.BreakHotbar and inventory.BreakHotbar[slot]
+		if item and item.itemName == LOG_ITEM_NAME then
+			totalLogs = totalLogs + item.quantity
+		end
+	end
+
+	-- Check BuildHotbar
+	for slot = 1, 6 do
+		local item = inventory.BuildHotbar and inventory.BuildHotbar[slot]
 		if item and item.itemName == LOG_ITEM_NAME then
 			totalLogs = totalLogs + item.quantity
 		end
 	end
 
 	-- Check backpack
-	for _, item in ipairs(inventory.Backpack) do
+	for _, item in ipairs(inventory.Backpack or {}) do
 		if item.itemName == LOG_ITEM_NAME then
 			totalLogs = totalLogs + item.quantity
 		end
@@ -53,11 +61,23 @@ end
 local function removeLogs(player, inventory, amount)
 	local remaining = amount
 
-	-- Remove from hotbar first
-	for slot = 1, 10 do
+	-- Remove from BreakHotbar first
+	for slot = 1, 6 do
 		if remaining <= 0 then break end
 
-		local item = inventory.Hotbar[slot]
+		local item = inventory.BreakHotbar and inventory.BreakHotbar[slot]
+		if item and item.itemName == LOG_ITEM_NAME then
+			local toRemove = math.min(item.quantity, remaining)
+			InventoryService:RemoveItem(player, item.id, toRemove)
+			remaining = remaining - toRemove
+		end
+	end
+
+	-- Remove from BuildHotbar
+	for slot = 1, 6 do
+		if remaining <= 0 then break end
+
+		local item = inventory.BuildHotbar and inventory.BuildHotbar[slot]
 		if item and item.itemName == LOG_ITEM_NAME then
 			local toRemove = math.min(item.quantity, remaining)
 			InventoryService:RemoveItem(player, item.id, toRemove)
@@ -66,7 +86,7 @@ local function removeLogs(player, inventory, amount)
 	end
 
 	-- Remove from backpack if needed
-	for _, item in ipairs(inventory.Backpack) do
+	for _, item in ipairs(inventory.Backpack or {}) do
 		if remaining <= 0 then break end
 
 		if item.itemName == LOG_ITEM_NAME then

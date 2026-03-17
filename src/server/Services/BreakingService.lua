@@ -92,7 +92,14 @@ local function getEquippedToolConfig(player: Player): any
 	local inventory = InventoryService:GetInventory(player)
 	if not inventory or not inventory.EquippedSlot then return BARE_HAND_CONFIG end
 
-	local equippedItem = inventory.Hotbar[inventory.EquippedSlot]
+	-- Get the correct hotbar based on current mode
+	local currentHotbar = inventory.CurrentMode == "Break"
+		and inventory.BreakHotbar
+		or inventory.BuildHotbar
+
+	if not currentHotbar then return BARE_HAND_CONFIG end
+
+	local equippedItem = currentHotbar[inventory.EquippedSlot]
 	if not equippedItem then return BARE_HAND_CONFIG end
 
 	local itemConfig = ItemData.GetItem(equippedItem.itemName)

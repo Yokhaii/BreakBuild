@@ -369,6 +369,15 @@ end
 
 --|| Tool Checking ||--
 
+local function isInBuildMode(): boolean
+	if not InventoryController then
+		return false
+	end
+
+	local inventory = InventoryController:GetInventory()
+	return inventory and inventory.CurrentMode == "Build"
+end
+
 local function getToolConfig()
 	if not InventoryController then
 		return { toolTier = BreakingConfig.BareHandToolTier, breakSpeed = BreakingConfig.BareHandBreakSpeed, isBareHand = true }
@@ -379,7 +388,16 @@ local function getToolConfig()
 		return { toolTier = BreakingConfig.BareHandToolTier, breakSpeed = BreakingConfig.BareHandBreakSpeed, isBareHand = true }
 	end
 
-	local equippedItem = inventory.Hotbar[inventory.EquippedSlot]
+	-- Get the correct hotbar based on current mode
+	local currentHotbar = inventory.CurrentMode == "Break"
+		and inventory.BreakHotbar
+		or inventory.BuildHotbar
+
+	if not currentHotbar then
+		return { toolTier = BreakingConfig.BareHandToolTier, breakSpeed = BreakingConfig.BareHandBreakSpeed, isBareHand = true }
+	end
+
+	local equippedItem = currentHotbar[inventory.EquippedSlot]
 	if not equippedItem then
 		return { toolTier = BreakingConfig.BareHandToolTier, breakSpeed = BreakingConfig.BareHandBreakSpeed, isBareHand = true }
 	end
@@ -393,6 +411,11 @@ local function getToolConfig()
 end
 
 local function canBreakHoveredObject(): boolean
+	-- Cannot break in Build mode
+	if isInBuildMode() then
+		return false
+	end
+
 	if not hoveredBreakableId then return false end
 
 	local breakable = breakableData[hoveredBreakableId]

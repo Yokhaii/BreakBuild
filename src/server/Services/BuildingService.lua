@@ -583,7 +583,17 @@ function BuildingService:PlaceBlock(player: Player, position: Vector3, itemName:
 		return false
 	end
 
-	local equippedItem = inventory.Hotbar[inventory.EquippedSlot]
+	-- Get the correct hotbar based on current mode
+	local currentHotbar = inventory.CurrentMode == "Break"
+		and inventory.BreakHotbar
+		or inventory.BuildHotbar
+
+	if not currentHotbar then
+		warn("No hotbar found for current mode")
+		return false
+	end
+
+	local equippedItem = currentHotbar[inventory.EquippedSlot]
 	if not equippedItem or equippedItem.itemName ~= itemName then
 		warn("Different item equipped")
 		return false

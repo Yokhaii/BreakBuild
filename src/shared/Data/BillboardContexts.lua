@@ -120,4 +120,22 @@ BillboardContexts.StorageChest = {
 	},
 }
 
+--[[
+	Context: Blueprints
+	Used when player is near the Blueprints table in BuildingZone
+	Opens the Blueprint selection menu
+]]
+BillboardContexts.Blueprints = {
+	Options = {
+		{
+			Text = "Open Blueprints",
+			Callback = function(player, data)
+				-- Open the Blueprint UI
+				local BlueprintController = Knit.GetController("BlueprintController")
+				BlueprintController:OpenBlueprintMenu()
+			end,
+		},
+	},
+}
+
 return BillboardContexts

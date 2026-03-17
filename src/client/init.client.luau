@@ -54,6 +54,26 @@ Preloader.ControllersLoadedSignal:Connect(function()
 	KnitClient.Start()
 		:andThen(function()
 			print("Knit Client Successfully Started")
+
+			-- Mount Roact UI with Rodux store provider
+			local RootApplication = require(StarterPlayer.StarterPlayerScripts.Client.Roact.Root.Application)
+			local Synchronization = require(StarterPlayer.StarterPlayerScripts.Client.Modules.Synchronization)
+
+			-- Initialize synchronization (connects service signals to Rodux)
+			Synchronization()
+
+			-- Mount the UI
+			local player = Players.LocalPlayer
+			local playerGui = player:WaitForChild("PlayerGui")
+
+			local app = Roact.createElement(RoduxHooks.Provider, {
+				store = Store,
+			}, {
+				App = Roact.createElement(RootApplication.Game),
+			})
+
+			Roact.mount(app, playerGui, "GameUI")
+			print("Roact UI mounted successfully")
 		end)
 		:catch(warn)
 		:await()

@@ -1,21 +1,31 @@
 return {
 	TemplateData = 1,
 
-	-- Inventory System
+	-- Inventory System (Dual-Mode Hotbar)
 	Inventory = {
-		-- Hotbar: 10 slots, numbered 1-10
-		Hotbar = {
+		-- Break Hotbar: 6 slots for breaking tools (isBreakingTool = true)
+		BreakHotbar = {
 			-- Each slot: {id: string, itemName: string, quantity: number} or nil
-			-- Example: [1] = {id = "abc123", itemName = "Dirt", quantity = 5}
+			-- Example: [1] = {id = "abc123", itemName = "WoodenPickaxe", quantity = 1}
+		},
+
+		-- Build Hotbar: 6 slots for building items (type = "Block" + Hammer in slot 1)
+		BuildHotbar = {
+			-- Slot 1 is always reserved for Hammer
+			-- Each slot: {id: string, itemName: string, quantity: number} or nil
+			-- Example: [2] = {id = "def456", itemName = "Dirt", quantity = 5}
 		},
 
 		-- Backpack: Expandable array of items
 		Backpack = {
 			-- Array of items: {id: string, itemName: string, quantity: number}
-			-- Example: {id = "def456", itemName = "Stone", quantity = 10}
+			-- Example: {id = "ghi789", itemName = "Stone", quantity = 10}
 		},
 
-		-- Currently equipped slot (1-10, or nil if nothing equipped)
+		-- Current hotbar mode: "Break" or "Build"
+		CurrentMode = "Build",
+
+		-- Currently equipped slot (1-6, relative to current mode's hotbar, or nil)
 		EquippedSlot = nil,
 
 		-- Next unique ID counter for items
