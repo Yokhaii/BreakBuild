@@ -9,6 +9,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Roact = require(ReplicatedStorage.Packages.Roact)
 local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
 
+-- Data
+local ItemData = require(ReplicatedStorage.Shared.Data.Items)
+
 local function HotbarSlot(props, hooks)
 	local slotNumber = props.slotNumber
 	local item = props.item -- { id, itemName, quantity } or nil
@@ -25,8 +28,14 @@ local function HotbarSlot(props, hooks)
 	local displayAmount = ""
 
 	if item then
-		-- Use itemName for now, can be enhanced to use ItemData for display names
-		displayName = item.itemName or ""
+		-- Get display name from item config, fallback to itemName
+		local itemConfig = ItemData.GetItem(item.itemName)
+		if itemConfig and itemConfig.displayName then
+			displayName = itemConfig.displayName
+		else
+			displayName = item.itemName or ""
+		end
+
 		if item.quantity and item.quantity > 1 then
 			displayAmount = "x" .. tostring(item.quantity)
 		end

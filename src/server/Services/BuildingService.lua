@@ -12,6 +12,7 @@ local ItemData = require(ReplicatedStorage.Shared.Data.Items)
 -- Services (to be initialized)
 local DataService
 local InventoryService
+local BlueprintService
 
 local BuildingService = Knit.CreateService({
 	Name = "BuildingService",
@@ -665,6 +666,23 @@ function BuildingService:PlaceBlock(player: Player, position: Vector3, itemName:
 	-- Notify client
 	self.Client.BlockPlaced:Fire(player, blockData)
 
+	-- Check if block was placed inside a blueprint
+	print("[BuildingService] Checking if block is inside a blueprint...")
+	if BlueprintService then
+		print("[BuildingService] BlueprintService exists, calling GetBlueprintAtPosition")
+		local blueprint, offset = BlueprintService:GetBlueprintAtPosition(player, snappedPos)
+		if blueprint then
+			print("[BuildingService] Block is inside blueprint:", blueprint.Id, "at offset:", offset)
+			-- Notify blueprint system (validates correct/wrong block, tracks progress)
+			local success, isCorrect = BlueprintService:OnBlockPlacedInBlueprint(player, blueprint.Id, offset, itemName, blockId)
+			print("[BuildingService] OnBlockPlacedInBlueprint result - success:", success, "isCorrect:", isCorrect)
+		else
+			print("[BuildingService] Block is NOT inside any blueprint")
+		end
+	else
+		print("[BuildingService] BlueprintService is nil!")
+	end
+
 	return true
 end
 
@@ -724,6 +742,25 @@ function BuildingService:RemoveBlock(player: Player, blockId: string): (boolean,
 
 	-- Get item name before removing from data
 	local itemName = blockData.itemName
+
+	-- Check if block was inside a blueprint before removing
+	if BlueprintService and blockData.relativePosition then
+		local _, area, _ = getBuildingZone()
+		if area then
+			local areaPosition = area.Position
+			local areaOrigin = Vector3.new(areaPosition.X, areaPosition.Y - 32, areaPosition.Z)
+			local blockWorldPos = areaOrigin + Vector3.new(
+				blockData.relativePosition.x,
+				blockData.relativePosition.y,
+				blockData.relativePosition.z
+			)
+
+			local blueprint, offset = BlueprintService:GetBlueprintAtPosition(player, blockWorldPos)
+			if blueprint then
+				BlueprintService:OnBlockRemovedFromBlueprint(player, blueprint.Id, offset)
+			end
+		end
+	end
 
 	-- Remove from PlacedBlocks data
 	table.remove(buildingData.PlacedBlocks, blockIndex)
@@ -906,6 +943,7 @@ end
 function BuildingService:KnitStart()
 	DataService = Knit.GetService("DataService")
 	InventoryService = Knit.GetService("InventoryService")
+	BlueprintService = Knit.GetService("BlueprintService")
 
 	-- Get building zone references
 	getBuildingZone()

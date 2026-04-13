@@ -4,6 +4,7 @@
 local Blocks = require(script.Blocks)
 local Ores = require(script.Ores)
 local Tools = require(script.Tools)
+local Blueprints = require(script.Blueprints)
 
 local ItemData = {}
 
@@ -22,6 +23,11 @@ end
 
 -- Add all tools
 for itemName, itemConfig in pairs(Tools) do
+	ItemData.Items[itemName] = itemConfig
+end
+
+-- Add all blueprints
+for itemName, itemConfig in pairs(Blueprints) do
 	ItemData.Items[itemName] = itemConfig
 end
 

@@ -170,7 +170,22 @@ local function detectBlockUnderCursor(): Model?
 	-- Create raycast params
 	local raycastParams = RaycastParams.new()
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-	raycastParams.FilterDescendantsInstances = {player.Character}
+
+	-- Build filter list: character and blueprint models (so we can detect blocks inside blueprints)
+	local filterList = {player.Character}
+
+	-- Add blueprint models to filter
+	local zone = getBuildingZone()
+	if zone then
+		for _, child in ipairs(zone:GetChildren()) do
+			-- Blueprint models have a BlueprintId child
+			if child:FindFirstChild("BlueprintId") then
+				table.insert(filterList, child)
+			end
+		end
+	end
+
+	raycastParams.FilterDescendantsInstances = filterList
 
 	-- Perform raycast
 	local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
@@ -413,6 +428,17 @@ local function updatePreview()
 	for _, part in ipairs(Workspace:GetDescendants()) do
 		if part:IsA("BasePart") and part:GetAttribute("Ignore") then
 			table.insert(filterList, part)
+		end
+	end
+
+	-- Add blueprint models to filter (so we can place blocks inside blueprints)
+	local zone = getBuildingZone()
+	if zone then
+		for _, child in ipairs(zone:GetChildren()) do
+			-- Blueprint models have a BlueprintId child
+			if child:FindFirstChild("BlueprintId") then
+				table.insert(filterList, child)
+			end
 		end
 	end
 

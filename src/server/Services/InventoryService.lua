@@ -271,6 +271,43 @@ local function migrateInventory(inventory)
 	return true -- Migration performed
 end
 
+-- Clean up invalid items (items that no longer exist in ItemData)
+local function cleanupInvalidItems(inventory)
+	local removedCount = 0
+
+	-- Clean BreakHotbar
+	for slot = 1, HOTBAR_SIZE do
+		local item = inventory.BreakHotbar[slot]
+		if item and not ItemData.GetItem(item.itemName) then
+			print("[InventoryService] Removing invalid item from BreakHotbar:", item.itemName)
+			inventory.BreakHotbar[slot] = nil
+			removedCount = removedCount + 1
+		end
+	end
+
+	-- Clean BuildHotbar (skip slot 1 which is Hammer)
+	for slot = 2, HOTBAR_SIZE do
+		local item = inventory.BuildHotbar[slot]
+		if item and not ItemData.GetItem(item.itemName) then
+			print("[InventoryService] Removing invalid item from BuildHotbar:", item.itemName)
+			inventory.BuildHotbar[slot] = nil
+			removedCount = removedCount + 1
+		end
+	end
+
+	-- Clean Backpack (iterate in reverse to safely remove)
+	for i = #inventory.Backpack, 1, -1 do
+		local item = inventory.Backpack[i]
+		if item and not ItemData.GetItem(item.itemName) then
+			print("[InventoryService] Removing invalid item from Backpack:", item.itemName)
+			table.remove(inventory.Backpack, i)
+			removedCount = removedCount + 1
+		end
+	end
+
+	return removedCount
+end
+
 -- Get inventory data for player
 local function getInventory(player: Player)
 	local playerData = DataService:GetData(player)
@@ -470,6 +507,15 @@ function InventoryService:AddItem(player: Player, itemName: string, quantity: nu
 	table.insert(inventory.Backpack, newItem)
 	fireInventoryUpdate(self, player, inventory)
 	return true
+end
+
+-- Add a blueprint item to inventory (legacy method - now uses standard AddItem)
+-- blueprintType should be the blueprint name like "Workbench" or "Furnace"
+function InventoryService:AddBlueprintItem(player: Player, blueprintType: string): boolean
+	-- Construct the item name from the blueprint type
+	-- e.g., "Workbench" -> "WorkbenchBlueprint"
+	local itemName = blueprintType .. "Blueprint"
+	return self:AddItem(player, itemName, 1)
 end
 
 -- Remove item from inventory by ID
@@ -985,7 +1031,9 @@ end
 --|| Client Functions ||--
 
 function InventoryService.Client:GetInventory(player: Player)
-	return self.Server:GetInventory(player)
+	local inventory = getInventory(player)
+	if not inventory then return nil end
+	return serializeInventory(inventory)
 end
 
 function InventoryService.Client:MoveToHotbar(player: Player, itemId: string, targetSlot: number)
@@ -1024,6 +1072,10 @@ function InventoryService.Client:GetCurrentMode(player: Player)
 	return self.Server:GetCurrentMode(player)
 end
 
+function InventoryService.Client:AddItem(player: Player, itemName: string, quantity: number)
+	return self.Server:AddItem(player, itemName, quantity or 1)
+end
+
 -- KNIT START
 function InventoryService:KnitStart()
 	DataService = Knit.GetService("DataService")
@@ -1039,6 +1091,12 @@ function InventoryService:KnitStart()
 				local migrated = migrateInventory(inventory)
 				if migrated then
 					print("[InventoryService] Migrated inventory for", player.Name)
+				end
+
+				-- Clean up invalid items (items removed from ItemData)
+				local removedCount = cleanupInvalidItems(inventory)
+				if removedCount > 0 then
+					print("[InventoryService] Cleaned up", removedCount, "invalid items for", player.Name)
 				end
 
 				-- Ensure starter tools
@@ -1061,6 +1119,12 @@ function InventoryService:KnitStart()
 				local migrated = migrateInventory(inventory)
 				if migrated then
 					print("[InventoryService] Migrated inventory for", player.Name)
+				end
+
+				-- Clean up invalid items (items removed from ItemData)
+				local removedCount = cleanupInvalidItems(inventory)
+				if removedCount > 0 then
+					print("[InventoryService] Cleaned up", removedCount, "invalid items for", player.Name)
 				end
 
 				-- Ensure starter tools

@@ -75,6 +75,28 @@ return {
 		SpawnInterval = 5,
 	},
 
+	-- Blueprint System
+	Blueprints = {
+		-- Array of placed blueprints in BuildingArea
+		PlacedBlueprints = {
+			-- Each blueprint: {
+			--   id: string,
+			--   blueprintType: string (e.g., "Workbench", "Furnace"),
+			--   relativePosition: {x: number, y: number, z: number}, -- Relative to BuildingArea origin
+			--   rotation: number (0, 90, 180, 270 degrees),
+			--   ownerId: number (player UserId),
+			--   completedAt: number (os.time() when completed, or 0 if not completed),
+			--   filledBlocks: {
+			--     -- Keyed by offset string "x,y,z"
+			--     ["0,0,0"] = { blockType = "SprucePlank", blockId = "abc123" },
+			--   },
+			-- }
+		},
+
+		-- Next unique ID counter for blueprints
+		NextBlueprintId = 1,
+	},
+
 	-- Tree System
 	Tree = {
 		-- Currently selected tree type

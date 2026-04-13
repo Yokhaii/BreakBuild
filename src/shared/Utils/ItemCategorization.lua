@@ -30,6 +30,11 @@ function ItemCategorization.getItemCategory(itemConfig)
 		return "build"
 	end
 
+	-- Blueprint tools go to Build hotbar (they're used for placing structures)
+	if itemConfig.isBlueprintTool or itemConfig.type == "Blueprint" then
+		return "build"
+	end
+
 	-- Blocks go to Build hotbar
 	if itemConfig.type == "Block" then
 		return "build"
@@ -37,6 +42,15 @@ function ItemCategorization.getItemCategory(itemConfig)
 
 	-- Default to backpack for uncategorized items
 	return "backpack"
+end
+
+--[=[
+	Checks if an item is a blueprint tool
+	@param itemConfig - The item configuration table
+	@return boolean
+]=]
+function ItemCategorization.isBlueprintTool(itemConfig)
+	return itemConfig and itemConfig.isBlueprintTool == true
 end
 
 --[=[
