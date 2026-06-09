@@ -41,65 +41,37 @@ end
 
 -- Check if blueprint is complete (all required blocks filled with correct types)
 function BaseBlueprint:IsComplete(): boolean
-	if not self.Definition then
-		print("[BaseBlueprint:IsComplete] No definition, returning false")
-		return false
-	end
+	if not self.Definition then return false end
 
-	print("[BaseBlueprint:IsComplete] Checking completion for blueprint:", self.Id)
-	print("[BaseBlueprint:IsComplete] Required blocks:", #self.Definition.blocks)
-
-	-- Debug: print all filled blocks
-	local filledCount = 0
-	for key, data in pairs(self.FilledBlocks) do
-		filledCount = filledCount + 1
-		print("[BaseBlueprint:IsComplete] Filled block at key:", key, "type:", data.blockType)
-	end
-	print("[BaseBlueprint:IsComplete] Total filled blocks:", filledCount)
-
-	for i, blockReq in ipairs(self.Definition.blocks) do
+	for _, blockReq in ipairs(self.Definition.blocks) do
 		local offsetKey = self:_OffsetToKey(blockReq.offset)
 		local filledBlock = self.FilledBlocks[offsetKey]
 
-		print("[BaseBlueprint:IsComplete] Checking block", i, "- offset:", blockReq.offset, "key:", offsetKey, "required:", blockReq.blockType)
-
 		if not filledBlock then
-			print("[BaseBlueprint:IsComplete] MISSING block at key:", offsetKey)
 			return false -- Missing block
 		end
 
 		if filledBlock.blockType ~= blockReq.blockType then
-			print("[BaseBlueprint:IsComplete] WRONG TYPE at key:", offsetKey, "- got:", filledBlock.blockType, "expected:", blockReq.blockType)
 			return false -- Wrong block type
 		end
-
-		print("[BaseBlueprint:IsComplete] Block", i, "OK - key:", offsetKey)
 	end
 
-	print("[BaseBlueprint:IsComplete] *** BLUEPRINT IS COMPLETE! ***")
 	return true
 end
 
 -- Get the required block type at a specific offset
 function BaseBlueprint:GetRequiredBlockAt(offset: Vector3): string?
-	if not self.Definition then
-		print("[BaseBlueprint:GetRequiredBlockAt] No definition!")
-		return nil
-	end
+	if not self.Definition then return nil end
 
 	-- Apply rotation to offset
 	local rotatedOffset = self:_RotateOffset(offset)
-	print("[BaseBlueprint:GetRequiredBlockAt] Looking for block at offset:", offset, "rotated:", rotatedOffset)
 
-	for i, blockReq in ipairs(self.Definition.blocks) do
-		print("[BaseBlueprint:GetRequiredBlockAt] Checking block", i, "offset:", blockReq.offset, "type:", blockReq.blockType)
+	for _, blockReq in ipairs(self.Definition.blocks) do
 		if blockReq.offset == rotatedOffset then
-			print("[BaseBlueprint:GetRequiredBlockAt] FOUND! Required type:", blockReq.blockType)
 			return blockReq.blockType
 		end
 	end
 
-	print("[BaseBlueprint:GetRequiredBlockAt] No block required at this offset")
 	return nil
 end
 

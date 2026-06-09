@@ -5,8 +5,8 @@
 
 return {
 	-- Button size and position
-	ButtonSize = UDim2.fromOffset(140, 32),
-	ButtonPosition = UDim2.new(0.5, 0, 0, -10), -- Relative to hotbar (above it)
+	ButtonSize = UDim2.fromOffset(50, 50),
+	ButtonPosition = UDim2.new(0, -5, 0.5, 0), -- Left of first hotbar slot
 	CornerRadius = UDim.new(0, 8),
 
 	-- Stroke

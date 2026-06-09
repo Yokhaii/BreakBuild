@@ -40,7 +40,7 @@ local TOGGLE_BACKPACK_KEYS = {
 }
 local DROP_KEY = Enum.KeyCode.G
 local MODE_TOGGLE_KEY = Enum.KeyCode.Tab
-local HOTBAR_SIZE = 6 -- Per mode
+local HOTBAR_SIZE = 7 -- Per mode
 
 -- Private variables
 local InventoryService

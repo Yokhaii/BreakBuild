@@ -27,7 +27,7 @@ local InventoryService = Knit.CreateService({
 })
 
 -- Constants
-local HOTBAR_SIZE = 6 -- Per mode (6 slots each)
+local HOTBAR_SIZE = 7 -- Per mode (6 slots each)
 local DROP_DISTANCE = 5 -- Distance in front of player to drop items
 
 -- Types

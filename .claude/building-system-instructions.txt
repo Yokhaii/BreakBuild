@@ -1,0 +1,322 @@
+================================================================================
+                    BUILDING SYSTEM ARCHITECTURE
+                    Break & Build - Roblox Game
+================================================================================
+
+This document explains how the building system works in this project.
+Read this to understand how blocks, blueprints, and structures are placed
+inside the BuildingArea.
+
+================================================================================
+1. OVERVIEW
+================================================================================
+
+The building system allows players to:
+- Place individual BLOCKS on a grid
+- Place BLUEPRINTS (ghost structures showing where to put blocks)
+- Fill blueprints with blocks to create COMPLETED STRUCTURES
+- Remove any of these with a Hammer tool
+
+Three types of placeable objects:
+  1. Block           = Single colored block (SandBlock, DirtBlock, SprucePlank...)
+  2. UncompletedBlueprint = Ghost/transparent model showing where to place blocks
+  3. CompletedBlueprint   = Solid functional structure (Workbench, Furnace...)
+
+================================================================================
+2. KEY FILES
+================================================================================
+
+SERVER:
+  src/server/Services/BuildingService.lua
+    - Handles all block placement/removal
+    - Validates positions, collisions, support
+    - Saves block data to player data
+    - Fires signals to clients
+
+  src/server/Services/BlueprintService.lua
+    - Handles blueprint and structure placement
+    - Tracks which blocks fill each blueprint
+    - Triggers completion when all blocks placed
+    - Creates completed structure models
+
+  src/server/Classes/Blueprints/BaseBlueprint.lua
+    - Server-side blueprint class
+    - Creates ghost models and completed models
+    - Handles block filling logic
+
+CLIENT:
+  src/client/Controllers/BuildingController.lua
+    - Preview rendering (ghost block following cursor)
+    - Raycast to find placement surface
+    - Visual feedback (highlight colors)
+    - WallLimit pulsing animation
+
+  src/client/Controllers/BlueprintPlacementController.lua
+    - Preview for blueprint placement
+    - Similar to BuildingController but for blueprints
+
+SHARED:
+  src/shared/Data/Blueprints/*.lua
+    - Blueprint definitions (Workbench, Furnace)
+    - Specifies required blocks and their offsets
+
+  src/shared/Data/Items/init.lua
+    - Item definitions including blocks
+    - blockSize property determines grid snapping
+
+================================================================================
+3. THE BUILDING AREA
+================================================================================
+
+Location: Workspace.BuildingZone.BuildingArea
+
+The BuildingArea is a 64x64x64 invisible Part that defines where building
+is allowed.
+
+COORDINATE SYSTEM:
+  - Origin (0,0,0) is at FLOOR LEVEL (bottom center of BuildingArea)
+  - BuildingArea.Position.Y - 32 = floor level
+  - X/Z bounds: -32 to +32
+  - Y bounds: 0 to 64
+
+  Code to get origin:
+    local areaOrigin = Vector3.new(area.Position.X, area.Position.Y - 32, area.Position.Z)
+
+All positions are saved as RELATIVE positions (offset from origin).
+This makes the system portable if the BuildingZone moves.
+
+================================================================================
+4. GRID SYSTEM
+================================================================================
+
+GRID_SIZE = 2 studs
+
+Blocks snap differently based on their size:
+
+  4x4x4 blocks (half=2) -> snap to EVEN positions: 2, 4, 6, 8...
+  2x2x2 blocks (half=1) -> snap to ODD positions:  1, 3, 5, 7...
+
+This ensures blocks of different sizes align properly on the grid.
+
+Snapping logic (snapToGridForBlockSize):
+  if halfBlockSize % GRID_SIZE == 0:
+      snap to grid multiples
+  else:
+      snap to offset grid (grid + half grid)
+
+================================================================================
+5. BLOCK PLACEMENT FLOW
+================================================================================
+
+CLIENT SIDE (BuildingController):
+  1. Player equips a Block item
+  2. startBuildingMode() creates preview model
+  3. Every frame, updatePreview():
+     - Raycast from mouse to find surface
+     - Add normal * (blockSize/2) to get target position
+     - Snap to grid based on block size
+     - Clamp to BuildingArea bounds
+     - Update preview model position
+     - Set highlight color (green=valid, red=invalid)
+  4. On click, call BuildingService:PlaceBlock()
+
+SERVER SIDE (BuildingService):
+  1. PlaceBlock(player, position, itemName) receives request
+  2. CanPlaceBlock() validates:
+     - Item exists and is a Block type
+     - Snap position to grid
+     - Check within bounds (isWithinBounds)
+     - Check no collision (hasCollision)
+     - Check support (hasProperSupport or hasAdjacentBlock + hasGroundConnection)
+  3. Consume item from inventory
+  4. CreateBlockInWorld() clones the building part model
+  5. Save to player data as relativePosition
+  6. Check if block is inside a blueprint (BlueprintService:OnBlockPlacedInBlueprint)
+  7. Fire BlockPlaced signal to client
+
+DATA STRUCTURE (saved in PlayerData.Building.PlacedBlocks):
+  {
+    id = "123_block_1",
+    itemName = "SandBlock",
+    relativePosition = {x = 4, y = 2, z = 0},
+    size = {x = 4, y = 4, z = 4},
+    buildingAreaId = "123"
+  }
+
+================================================================================
+6. PLACEMENT VALIDATION
+================================================================================
+
+isWithinBounds(position, blockSize):
+  - Converts world position to relative position
+  - Checks if block (including its size) fits within -32..+32 (X/Z) and 0..64 (Y)
+
+hasCollision(player, position, blockSize):
+  - AABB collision check against all existing blocks
+  - Returns true if overlapping
+
+hasProperSupport(player, position, blockSize):
+  - Returns true if block is on ground (floor level)
+  - Otherwise checks if ALL grid cells underneath have blocks
+
+hasAdjacentBlock(player, position, blockSize):
+  - AABB edge-touching detection
+  - Returns true if touching any existing block (any face)
+
+hasGroundConnection(player, position, blockSize):
+  - Flood-fill search through adjacent blocks
+  - Returns true if any connected block reaches ground level
+
+VALIDATION ORDER:
+  1. Bounds check
+  2. Collision check
+  3. Support check:
+     - If has support underneath -> OK
+     - Else if has adjacent block AND ground connection -> OK
+     - Otherwise -> FAIL
+
+================================================================================
+7. BLUEPRINT SYSTEM
+================================================================================
+
+BLUEPRINT DEFINITION (e.g., Workbench.lua):
+  {
+    id = "Workbench",
+    size = Vector3.new(4, 4, 8),
+    blocks = {
+      { offset = Vector3.new(0, 0, 0), blockType = "SprucePlank" },
+      { offset = Vector3.new(2, 0, 0), blockType = "SprucePlank" },
+      ...
+    },
+    modelPath = "ReplicatedStorage.Assets.Blueprints.Workbench",
+    completedModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.Workbench",
+    completedItemName = "CompletedWorkbench",
+  }
+
+PLACEMENT FLOW:
+  1. Player equips Blueprint item (e.g., "WorkbenchBlueprint")
+  2. Client shows ghost preview model
+  3. On click, BlueprintService:PlaceBlueprint()
+  4. Server creates ghost model in world
+  5. Ghost model shows where to place each block
+
+FILLING FLOW:
+  1. Player places a block
+  2. BuildingService checks if block is inside any blueprint
+  3. If yes, calls BlueprintService:OnBlockPlacedInBlueprint()
+  4. Blueprint tracks filled blocks (correct or wrong type)
+  5. When all blocks filled with correct types -> blueprint completes
+
+COMPLETION FLOW:
+  1. Blueprint.IsComplete() returns true
+  2. onBlueprintCompleted() is called
+  3. All individual blocks are removed (RemoveBlockSilent - no item return)
+  4. Completed structure model is created
+  5. Structure is registered as breakable (can be destroyed with tools)
+
+================================================================================
+8. REMOVAL SYSTEM
+================================================================================
+
+The Hammer tool enables removal mode:
+  - Hover over block/blueprint/structure to highlight
+  - Click to remove
+
+BLOCK REMOVAL:
+  - RemoveBlock() destroys model, removes from data, returns item to inventory
+
+UNCOMPLETED BLUEPRINT REMOVAL:
+  - RemoveUncompletedBlueprint() returns all filled blocks AND the blueprint item
+
+COMPLETED STRUCTURE REMOVAL:
+  - RemoveCompletedStructure() destroys structure, returns completed item
+  - Can also be broken with tools (BreakingService)
+
+================================================================================
+9. PERSISTENCE
+================================================================================
+
+Player data structure (DataService):
+  PlayerData = {
+    Building = {
+      PlacedBlocks = {...},
+      NextBlockId = 1,
+      BuildingAreaId = "playerId"
+    },
+    Blueprints = {
+      PlacedBlueprints = {...},
+      NextBlueprintId = 1
+    }
+  }
+
+On player join:
+  - BuildingService:LoadPlacedBlocks() recreates all blocks in world
+  - BlueprintService:LoadPlayerBlueprints() recreates all blueprints/structures
+
+On player leave:
+  - All blocks/blueprints are destroyed from world (data remains saved)
+
+================================================================================
+10. ITEM CONFIGURATION
+================================================================================
+
+Block items in Items/init.lua must have:
+  {
+    name = "SandBlock",
+    type = "Block",
+    blockSize = Vector3.new(4, 4, 4),
+    buildingPartPath = "ReplicatedStorage.Assets.BuildingBlocks.SandBlock",
+  }
+
+Blueprint items must have:
+  {
+    name = "WorkbenchBlueprint",
+    type = "Blueprint",
+    blueprintType = "Workbench",
+  }
+
+Structure items (completed) must have:
+  {
+    name = "CompletedWorkbench",
+    type = "Structure",
+    isStructure = true,
+    blueprintType = "Workbench",
+  }
+
+================================================================================
+11. COMMON PATTERNS
+================================================================================
+
+Converting world <-> relative position:
+  local areaOrigin = Vector3.new(area.Position.X, area.Position.Y - 32, area.Position.Z)
+  local relativePos = worldPosition - areaOrigin
+  local worldPos = areaOrigin + relativePos
+
+Snapping to grid:
+  local snapped = snapToGridForBlockSize(position, blockSize)
+
+Checking bounds:
+  isWithinBounds(worldPosition, blockSize)
+
+Finding blueprint at position:
+  local blueprint, offset = BlueprintService:GetBlueprintAtPosition(player, worldPos)
+
+================================================================================
+12. SIGNALS / EVENTS
+================================================================================
+
+BuildingService.Client:
+  - BlockPlaced(blockData)
+  - BlockRemoved(blockId)
+
+BlueprintService.Client:
+  - BlueprintPlaced(blueprintData)
+  - BlueprintRemoved(blueprintId)
+  - BlueprintBlockFilled(blueprintId, offset, blockType, isCorrect)
+  - BlueprintBlockRemoved(blueprintId, offset)
+  - BlueprintCompleted(blueprintId)
+  - StructurePlaced(structureData)
+
+================================================================================
+END OF DOCUMENT
+================================================================================

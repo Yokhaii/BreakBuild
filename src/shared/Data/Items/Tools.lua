@@ -18,9 +18,13 @@ local Tools = {
 		stackable = false,
 		maxStack = 1,
 		dropable = false,
-		description = "A hammer for removing placed blocks",
+		description = "A hammer for removing placed blocks and structures",
 		modelPath = "Assets.Items.Hammer",
 		isRemovalTool = true,
+		-- Breaking properties for structures
+		isBreakingTool = true,
+		breakSpeed = 1.0,
+		toolTier = "Wood",
 	},
 
 	WoodenPickaxe = {

@@ -18,6 +18,7 @@ local ServerBaseBlueprint = require(game:GetService("ServerScriptService").Serve
 local DataService
 local InventoryService
 local BuildingService
+local BreakingService
 
 local BlueprintService = Knit.CreateService({
 	Name = "BlueprintService",
@@ -27,6 +28,7 @@ local BlueprintService = Knit.CreateService({
 		BlueprintBlockFilled = Knit.CreateSignal(), -- (blueprintId, offset, blockType, isCorrect)
 		BlueprintBlockRemoved = Knit.CreateSignal(), -- (blueprintId, offset)
 		BlueprintCompleted = Knit.CreateSignal(), -- (blueprintId)
+		StructurePlaced = Knit.CreateSignal(), -- (structureData) - when completed structure is placed from inventory
 	},
 })
 
@@ -83,33 +85,24 @@ end
 
 -- Create blueprint class instance based on type
 local function createBlueprintInstance(data)
-	print("[createBlueprintInstance] Creating instance for type:", data.blueprintType)
-
 	local definition = BlueprintDefinitions.GetDefinition(data.blueprintType)
 	if not definition then
-		print("[createBlueprintInstance] No definition found, using base class")
 		return ServerBaseBlueprint.new(data)
 	end
 
 	-- Try to load specific class
 	local serverClassName = definition.serverClass
-	print("[createBlueprintInstance] Server class name from definition:", serverClassName)
-
 	if serverClassName then
 		local success, classModule = pcall(function()
 			return require(game:GetService("ServerScriptService").Server.Classes.Blueprints[serverClassName])
 		end)
 
 		if success and classModule then
-			print("[createBlueprintInstance] Successfully loaded class:", serverClassName)
 			return classModule.new(data)
-		else
-			print("[createBlueprintInstance] Failed to load class:", serverClassName, "error:", classModule)
 		end
 	end
 
 	-- Fallback to base class
-	print("[createBlueprintInstance] Using fallback base class")
 	return ServerBaseBlueprint.new(data)
 end
 
@@ -210,6 +203,49 @@ local function areAllBlocksWithinBounds(anchorRelativePosition: Vector3, definit
 	return true
 end
 
+-- Handle blueprint completion - replace blocks with completed model
+local function onBlueprintCompleted(player, blueprint)
+	print("[BlueprintService] Blueprint completed:", blueprint.Id)
+
+	local areaOrigin = getBuildingAreaOrigin()
+
+	-- Remove all the individual blocks that were placed for this blueprint
+	if BuildingService and blueprint.FilledBlocks then
+		for offsetKey, blockData in pairs(blueprint.FilledBlocks) do
+			if blockData.blockId then
+				-- Remove block without giving item back (it's part of the structure now)
+				BuildingService:RemoveBlockSilent(player, blockData.blockId)
+			end
+		end
+	end
+
+	-- Create the completed structure model
+	local completedModel = blueprint:CreateCompletedModel(areaOrigin)
+	if not completedModel then
+		warn("[BlueprintService] Failed to create completed model for:", blueprint.Id)
+		return
+	end
+
+	-- Register as breakable with BreakingService
+	if BreakingService then
+		local breakableId = blueprint:GetBreakableId()
+		local dropItem = blueprint:GetDropItemName()
+
+		BreakingService:RegisterBreakable(player, breakableId, {
+			materialType = "Structure",
+			dropItem = dropItem or "",
+			dropAmount = 1,
+			position = completedModel.PrimaryPart and completedModel.PrimaryPart.Position or areaOrigin + blueprint.RelativePosition,
+			part = completedModel,
+			customBreakTime = 2.0,
+			onBroken = function(breakingPlayer, brokenBreakableId)
+				-- Handle structure destruction
+				BlueprintService:OnStructureBroken(breakingPlayer, blueprint.Id)
+			end,
+		})
+	end
+end
+
 -- Check if blueprint overlaps with existing blocks or blueprints
 local function hasCollision(player, relativePosition, blueprintSize)
 	-- Check collision with existing blueprints
@@ -301,6 +337,35 @@ function BlueprintService:PlaceBlueprint(player, position, blueprintType, rotati
 		return false, "Maximum quantity reached"
 	end
 
+	-- Check if player has the blueprint item equipped and consume it
+	local inventory = InventoryService:GetInventory(player)
+	if not inventory or not inventory.EquippedSlot then
+		warn("[BlueprintService] No item equipped")
+		return false, "No item equipped"
+	end
+
+	local currentHotbar = inventory.CurrentMode == "Break"
+		and inventory.BreakHotbar
+		or inventory.BuildHotbar
+
+	if not currentHotbar then
+		return false, "No hotbar found"
+	end
+
+	local equippedItem = currentHotbar[inventory.EquippedSlot]
+	local expectedItemName = blueprintType .. "Blueprint"
+	if not equippedItem or equippedItem.itemName ~= expectedItemName then
+		warn("[BlueprintService] Wrong item equipped:", equippedItem and equippedItem.itemName or "nil", "expected:", expectedItemName)
+		return false, "Wrong item equipped"
+	end
+
+	-- Consume the blueprint item from inventory
+	local consumed = InventoryService:RemoveItem(player, equippedItem.id, 1)
+	if not consumed then
+		warn("[BlueprintService] Failed to consume blueprint item")
+		return false, "Failed to consume item"
+	end
+
 	-- Create blueprint data
 	-- Store anchor center position (used by CreateModel to position PrimaryPart)
 	local blueprintId = generateBlueprintId(player)
@@ -336,6 +401,8 @@ function BlueprintService:PlaceBlueprint(player, position, blueprintType, rotati
 	-- Connect events
 	blueprint.OnCompleted:Connect(function()
 		self.Client.BlueprintCompleted:Fire(player, blueprintId)
+		-- Handle completion - replace with solid model
+		onBlueprintCompleted(player, blueprint)
 	end)
 
 	-- Notify client
@@ -347,31 +414,17 @@ end
 
 -- Get blueprint at a specific world position
 function BlueprintService:GetBlueprintAtPosition(player, worldPosition)
-	print("[BlueprintService:GetBlueprintAtPosition] Called for player:", player.Name, "worldPos:", worldPosition)
-
 	local blueprints = playerBlueprints[player]
-	if not blueprints then
-		print("[BlueprintService:GetBlueprintAtPosition] No blueprints found for player")
-		return nil, nil
-	end
+	if not blueprints then return nil, nil end
 
 	local areaOrigin = getBuildingAreaOrigin()
 	local relativePos = worldPosition - areaOrigin
-	print("[BlueprintService:GetBlueprintAtPosition] Area origin:", areaOrigin, "relativePos:", relativePos)
 
-	for bpId, blueprint in pairs(blueprints) do
-		print("[BlueprintService:GetBlueprintAtPosition] Checking blueprint:", bpId)
-
-		if not blueprint.Definition then
-			print("[BlueprintService:GetBlueprintAtPosition] Blueprint has no definition, skipping")
-			continue
-		end
+	for _, blueprint in pairs(blueprints) do
+		if not blueprint.Definition then continue end
 
 		local bpMin = blueprint.RelativePosition
 		local bpMax = blueprint.RelativePosition + blueprint.Definition.size
-
-		print("[BlueprintService:GetBlueprintAtPosition] Blueprint bounds - min:", bpMin, "max:", bpMax)
-		print("[BlueprintService:GetBlueprintAtPosition] Block relative pos:", relativePos)
 
 		-- Check if position is within blueprint bounds
 		if relativePos.X >= bpMin.X and relativePos.X < bpMax.X and
@@ -387,44 +440,23 @@ function BlueprintService:GetBlueprintAtPosition(player, worldPosition)
 				math.floor(offset.Z / GRID_SIZE) * GRID_SIZE
 			)
 
-			print("[BlueprintService:GetBlueprintAtPosition] MATCH! Blueprint:", bpId, "Offset:", offset)
 			return blueprint, offset
-		else
-			print("[BlueprintService:GetBlueprintAtPosition] No match for blueprint:", bpId)
 		end
 	end
 
-	print("[BlueprintService:GetBlueprintAtPosition] No blueprint found at this position")
 	return nil, nil
 end
 
 -- Called when a block is placed inside a blueprint
 function BlueprintService:OnBlockPlacedInBlueprint(player, blueprintId, offset, blockType, blockId)
-	print("[BlueprintService:OnBlockPlacedInBlueprint] Called!")
-	print("[BlueprintService:OnBlockPlacedInBlueprint] Player:", player.Name, "BlueprintId:", blueprintId)
-	print("[BlueprintService:OnBlockPlacedInBlueprint] Offset:", offset, "BlockType:", blockType, "BlockId:", blockId)
-
 	local blueprints = playerBlueprints[player]
-	if not blueprints then
-		print("[BlueprintService:OnBlockPlacedInBlueprint] No blueprints found for player")
-		return false, false
-	end
+	if not blueprints then return false, false end
 
 	local blueprint = blueprints[blueprintId]
-	if not blueprint then
-		print("[BlueprintService:OnBlockPlacedInBlueprint] Blueprint not found:", blueprintId)
-		print("[BlueprintService:OnBlockPlacedInBlueprint] Available blueprints:")
-		for id, _ in pairs(blueprints) do
-			print("  -", id)
-		end
-		return false, false
-	end
-
-	print("[BlueprintService:OnBlockPlacedInBlueprint] Found blueprint, calling FillBlock...")
+	if not blueprint then return false, false end
 
 	-- Fill the block slot
 	local success, isCorrect = blueprint:FillBlock(offset, blockType, blockId)
-	print("[BlueprintService:OnBlockPlacedInBlueprint] FillBlock result - success:", success, "isCorrect:", isCorrect)
 
 	if success then
 		-- Update persisted data
@@ -437,11 +469,9 @@ function BlueprintService:OnBlockPlacedInBlueprint(player, blueprintId, offset, 
 						blockType = blockType,
 						blockId = blockId,
 					}
-					print("[BlueprintService:OnBlockPlacedInBlueprint] Persisted block at key:", offsetKey)
 
 					if blueprint.CompletedAt > 0 then
 						bpData.completedAt = blueprint.CompletedAt
-						print("[BlueprintService:OnBlockPlacedInBlueprint] Blueprint marked as completed in data!")
 					end
 					break
 				end
@@ -454,7 +484,6 @@ function BlueprintService:OnBlockPlacedInBlueprint(player, blueprintId, offset, 
 			y = offset.Y,
 			z = offset.Z,
 		}, blockType, isCorrect)
-		print("[BlueprintService:OnBlockPlacedInBlueprint] Client notified")
 	end
 
 	return success, isCorrect
@@ -496,7 +525,7 @@ function BlueprintService:OnBlockRemovedFromBlueprint(player, blueprintId, offse
 	return success
 end
 
--- Remove a blueprint
+-- Remove a blueprint (used internally, doesn't return item)
 function BlueprintService:RemoveBlueprint(player, blueprintId)
 	local blueprints = playerBlueprints[player]
 	if not blueprints then return false end
@@ -527,59 +556,112 @@ function BlueprintService:RemoveBlueprint(player, blueprintId)
 	return true
 end
 
--- Load all blueprints for a player (called on join)
-function BlueprintService:LoadPlayerBlueprints(player)
-	print("[BlueprintService] ========== LOADING BLUEPRINTS ==========")
-	print("[BlueprintService] Player:", player.Name)
+-- Remove an uncompleted blueprint with hammer - returns blueprint item and any placed blocks
+function BlueprintService:RemoveUncompletedBlueprint(player, blueprintId)
+	local blueprints = playerBlueprints[player]
+	if not blueprints then return false, "No blueprints found" end
 
-	local blueprintData = getBlueprintData(player)
-	if not blueprintData then
-		print("[BlueprintService] No blueprint data found for player")
-		return
+	local blueprint = blueprints[blueprintId]
+	if not blueprint then return false, "Blueprint not found" end
+
+	-- Can't remove completed blueprints this way (use hammer breaking for structures)
+	if blueprint.CompletedAt > 0 or blueprint.IsStructureComplete then
+		return false, "Blueprint is completed - use hammer to break the structure"
 	end
 
+	-- Return all filled blocks to inventory
+	if blueprint.FilledBlocks and BuildingService then
+		for offsetKey, blockData in pairs(blueprint.FilledBlocks) do
+			if blockData.blockId then
+				-- Remove the block and return it to inventory
+				BuildingService:RemoveBlock(player, blockData.blockId)
+			end
+		end
+	end
+
+	-- Get the blueprint item name to return
+	local blueprintItemName = blueprint.BlueprintType .. "Blueprint"
+
+	-- Destroy the model
+	blueprint:DestroyModel()
+
+	-- Remove from active blueprints
+	blueprints[blueprintId] = nil
+
+	-- Remove from persisted data
+	local blueprintData = getBlueprintData(player)
+	if blueprintData then
+		for i, bpData in ipairs(blueprintData.PlacedBlueprints) do
+			if bpData.id == blueprintId then
+				table.remove(blueprintData.PlacedBlueprints, i)
+				break
+			end
+		end
+	end
+
+	-- Return blueprint item to inventory
+	InventoryService:AddItem(player, blueprintItemName, 1)
+
+	-- Notify client
+	self.Client.BlueprintRemoved:Fire(player, blueprintId)
+
+	print("[BlueprintService] Uncompleted blueprint removed, returned:", blueprintItemName)
+	return true, blueprintItemName
+end
+
+-- Load all blueprints for a player (called on join)
+function BlueprintService:LoadPlayerBlueprints(player)
+	local blueprintData = getBlueprintData(player)
+	if not blueprintData then return end
+
 	local areaOrigin = getBuildingAreaOrigin()
-	print("[BlueprintService] Area origin:", areaOrigin)
 
 	-- Initialize player blueprint table
 	playerBlueprints[player] = {}
 
-	for i, bpData in ipairs(blueprintData.PlacedBlueprints) do
-		print("[BlueprintService] --- Loading blueprint", i, "---")
-		print("[BlueprintService] ID:", bpData.id)
-		print("[BlueprintService] Type:", bpData.blueprintType)
-		print("[BlueprintService] CompletedAt:", bpData.completedAt)
-
-		-- Count filled blocks in saved data
-		local savedFilledCount = 0
-		if bpData.filledBlocks then
-			for key, _ in pairs(bpData.filledBlocks) do
-				savedFilledCount = savedFilledCount + 1
-			end
-		end
-		print("[BlueprintService] Saved filled blocks:", savedFilledCount)
-
-		-- Create blueprint instance (this will use the specific class like Workbench)
+	for _, bpData in ipairs(blueprintData.PlacedBlueprints) do
+		-- Create blueprint instance
 		local blueprint = createBlueprintInstance(bpData)
-		print("[BlueprintService] Blueprint instance created, class type check - IsActive property exists:", blueprint.IsActive ~= nil)
-
 		playerBlueprints[player][bpData.id] = blueprint
 
-		-- Create model in world
-		blueprint:CreateModel(areaOrigin)
+		-- Check if already completed
+		local isAlreadyCompleted = bpData.completedAt and bpData.completedAt > 0
 
-		-- Connect events for future completions
+		if isAlreadyCompleted then
+			-- Create completed structure model directly
+			blueprint:CreateCompletedModel(areaOrigin)
+
+			-- Register as breakable
+			if BreakingService then
+				local breakableId = blueprint:GetBreakableId()
+				local dropItem = blueprint:GetDropItemName()
+
+				BreakingService:RegisterBreakable(player, breakableId, {
+					materialType = "Structure",
+					dropItem = dropItem or "",
+					dropAmount = 1,
+					position = blueprint.CompletedModel and blueprint.CompletedModel.PrimaryPart and blueprint.CompletedModel.PrimaryPart.Position or areaOrigin + blueprint.RelativePosition,
+					part = blueprint.CompletedModel,
+					customBreakTime = 2.0,
+					onBroken = function(breakingPlayer, brokenBreakableId)
+						BlueprintService:OnStructureBroken(breakingPlayer, bpData.id)
+					end,
+				})
+			end
+		else
+			-- Create ghost model
+			blueprint:CreateModel(areaOrigin)
+		end
+
+		-- Connect events for future completion
 		blueprint.OnCompleted:Connect(function()
-			print("[BlueprintService] OnCompleted fired for blueprint:", bpData.id)
 			self.Client.BlueprintCompleted:Fire(player, bpData.id)
+			onBlueprintCompleted(player, blueprint)
 		end)
 
 		-- Notify client
 		self.Client.BlueprintPlaced:Fire(player, bpData)
 	end
-
-	print("[BlueprintService] Loaded", #blueprintData.PlacedBlueprints, "blueprints for", player.Name)
-	print("[BlueprintService] ==========================================")
 end
 
 -- Get all blueprints for a player
@@ -594,6 +676,244 @@ function BlueprintService:GetBlueprint(player, blueprintId)
 	return blueprints[blueprintId]
 end
 
+-- Called when a completed structure is broken (legacy - for BreakingService callback)
+function BlueprintService:OnStructureBroken(player, blueprintId)
+	print("[BlueprintService] Structure broken:", blueprintId)
+
+	local blueprints = playerBlueprints[player]
+	if not blueprints then return end
+
+	local blueprint = blueprints[blueprintId]
+	if not blueprint then return end
+
+	-- The item is already given by BreakingService, just clean up
+
+	-- Remove from active blueprints
+	blueprints[blueprintId] = nil
+
+	-- Remove from persisted data
+	local blueprintData = getBlueprintData(player)
+	if blueprintData then
+		for i, bpData in ipairs(blueprintData.PlacedBlueprints) do
+			if bpData.id == blueprintId then
+				table.remove(blueprintData.PlacedBlueprints, i)
+				break
+			end
+		end
+	end
+
+	-- Notify client
+	self.Client.BlueprintRemoved:Fire(player, blueprintId)
+end
+
+-- Remove a completed structure with hammer - instant removal, returns structure item
+function BlueprintService:RemoveCompletedStructure(player, blueprintId)
+	print("[BlueprintService] RemoveCompletedStructure called:", blueprintId)
+
+	local blueprints = playerBlueprints[player]
+	if not blueprints then return false, "No blueprints found" end
+
+	local blueprint = blueprints[blueprintId]
+	if not blueprint then return false, "Blueprint not found" end
+
+	-- Must be a completed structure
+	if blueprint.CompletedAt == 0 and not blueprint.IsStructureComplete then
+		return false, "Structure is not completed - use RemoveUncompletedBlueprint instead"
+	end
+
+	-- Get the drop item name
+	local dropItemName = blueprint:GetDropItemName()
+	if not dropItemName then
+		dropItemName = "Completed" .. blueprint.BlueprintType
+	end
+
+	-- Unregister from BreakingService if it was registered
+	if BreakingService then
+		local breakableId = blueprint:GetBreakableId()
+		BreakingService:UnregisterBreakable(player, breakableId)
+	end
+
+	-- Destroy the model
+	blueprint:DestroyModel()
+
+	-- Remove from active blueprints
+	blueprints[blueprintId] = nil
+
+	-- Remove from persisted data
+	local blueprintData = getBlueprintData(player)
+	if blueprintData then
+		for i, bpData in ipairs(blueprintData.PlacedBlueprints) do
+			if bpData.id == blueprintId then
+				table.remove(blueprintData.PlacedBlueprints, i)
+				break
+			end
+		end
+	end
+
+	-- Give item to player
+	InventoryService:AddItem(player, dropItemName, 1)
+
+	-- Notify client
+	self.Client.BlueprintRemoved:Fire(player, blueprintId)
+
+	print("[BlueprintService] Completed structure removed, gave item:", dropItemName)
+	return true, dropItemName
+end
+
+-- Place a completed structure from inventory
+function BlueprintService:PlaceStructure(player, position, structureItemName, rotation)
+	print("[BlueprintService] PlaceStructure called:", player.Name, structureItemName)
+
+	-- Get item config
+	local itemConfig = ItemData.GetItem(structureItemName)
+	if not itemConfig or not itemConfig.isStructure then
+		warn("[BlueprintService] Not a valid structure item:", structureItemName)
+		return false, "Invalid structure item"
+	end
+
+	local blueprintType = itemConfig.blueprintType
+	if not blueprintType then
+		warn("[BlueprintService] Structure has no blueprintType:", structureItemName)
+		return false, "Invalid structure configuration"
+	end
+
+	-- Get blueprint definition for size/positioning
+	local definition = BlueprintDefinitions.GetDefinition(blueprintType)
+	if not definition then
+		warn("[BlueprintService] Unknown blueprint type:", blueprintType)
+		return false, "Unknown structure type"
+	end
+
+	-- Get building area origin
+	local areaOrigin = getBuildingAreaOrigin()
+
+	-- Get anchor block size for proper snapping
+	local anchorBlockSize = getAnchorBlockSize(definition)
+
+	-- Calculate position
+	local worldPosition = Vector3.new(position.X or position.x, position.Y or position.y, position.Z or position.z)
+	local snappedPosition = snapToGridForBlockSize(worldPosition, anchorBlockSize)
+	local anchorRelative = snappedPosition - areaOrigin
+
+	-- Validate placement
+	if not areAllBlocksWithinBounds(anchorRelative, definition) then
+		return false, "Outside building area"
+	end
+
+	local halfAnchorSize = anchorBlockSize / 2
+	local cornerRelative = anchorRelative - halfAnchorSize
+
+	if hasCollision(player, cornerRelative, definition.size) then
+		return false, "Overlapping with existing structure"
+	end
+
+	-- Check if player has the item equipped
+	local inventory = InventoryService:GetInventory(player)
+	if not inventory or not inventory.EquippedSlot then
+		warn("No item equipped")
+		return false
+	end
+
+	local currentHotbar = inventory.CurrentMode == "Break"
+		and inventory.BreakHotbar
+		or inventory.BuildHotbar
+
+	if not currentHotbar then
+		warn("No hotbar found")
+		return false
+	end
+
+	local equippedItem = currentHotbar[inventory.EquippedSlot]
+	if not equippedItem or equippedItem.itemName ~= structureItemName then
+		warn("Different item equipped")
+		return false
+	end
+
+	-- Consume item from inventory
+	local consumed = InventoryService:RemoveItem(player, equippedItem.id, 1)
+	if not consumed then
+		warn("Failed to consume item")
+		return false
+	end
+
+	-- Get player data
+	local blueprintData = getBlueprintData(player)
+	if not blueprintData then
+		-- Refund item
+		InventoryService:AddItem(player, structureItemName, 1)
+		return false, "Player data not found"
+	end
+
+	-- Create blueprint data (already completed)
+	local blueprintId = generateBlueprintId(player)
+	local newBlueprintData = {
+		id = blueprintId,
+		blueprintType = blueprintType,
+		relativePosition = {
+			x = anchorRelative.X,
+			y = anchorRelative.Y,
+			z = anchorRelative.Z,
+		},
+		rotation = rotation or 0,
+		ownerId = player.UserId,
+		completedAt = os.time(), -- Already completed
+		filledBlocks = {}, -- No individual blocks
+	}
+
+	-- Save to player data
+	table.insert(blueprintData.PlacedBlueprints, newBlueprintData)
+
+	-- Create blueprint instance
+	local blueprint = createBlueprintInstance(newBlueprintData)
+	blueprint.CompletedAt = os.time()
+
+	-- Initialize player blueprint table if needed
+	if not playerBlueprints[player] then
+		playerBlueprints[player] = {}
+	end
+	playerBlueprints[player][blueprintId] = blueprint
+
+	-- Create completed model directly
+	local completedModel = blueprint:CreateCompletedModel(areaOrigin)
+	if not completedModel then
+		-- Refund item
+		InventoryService:AddItem(player, structureItemName, 1)
+		-- Cleanup
+		playerBlueprints[player][blueprintId] = nil
+		for i, bpData in ipairs(blueprintData.PlacedBlueprints) do
+			if bpData.id == blueprintId then
+				table.remove(blueprintData.PlacedBlueprints, i)
+				break
+			end
+		end
+		return false, "Failed to create structure model"
+	end
+
+	-- Register as breakable
+	if BreakingService then
+		local breakableId = blueprint:GetBreakableId()
+		local dropItem = blueprint:GetDropItemName()
+
+		BreakingService:RegisterBreakable(player, breakableId, {
+			materialType = "Structure",
+			dropItem = dropItem or "",
+			dropAmount = 1,
+			position = completedModel.PrimaryPart and completedModel.PrimaryPart.Position or snappedPosition,
+			part = completedModel,
+			customBreakTime = 2.0,
+			onBroken = function(breakingPlayer, brokenBreakableId)
+				self:OnStructureBroken(breakingPlayer, blueprintId)
+			end,
+		})
+	end
+
+	-- Notify client
+	self.Client.StructurePlaced:Fire(player, newBlueprintData)
+
+	print("[BlueprintService] Structure placed:", blueprintId)
+	return true, blueprintId
+end
+
 --|| Client Functions ||--
 
 function BlueprintService.Client:PlaceBlueprint(player, position, blueprintType, rotation)
@@ -602,6 +922,18 @@ end
 
 function BlueprintService.Client:RemoveBlueprint(player, blueprintId)
 	return self.Server:RemoveBlueprint(player, blueprintId)
+end
+
+function BlueprintService.Client:RemoveUncompletedBlueprint(player, blueprintId)
+	return self.Server:RemoveUncompletedBlueprint(player, blueprintId)
+end
+
+function BlueprintService.Client:RemoveCompletedStructure(player, blueprintId)
+	return self.Server:RemoveCompletedStructure(player, blueprintId)
+end
+
+function BlueprintService.Client:PlaceStructure(player, position, structureItemName, rotation)
+	return self.Server:PlaceStructure(player, position, structureItemName, rotation)
 end
 
 function BlueprintService.Client:GetPlayerBlueprints(player)
@@ -674,6 +1006,7 @@ function BlueprintService:KnitStart()
 	DataService = Knit.GetService("DataService")
 	InventoryService = Knit.GetService("InventoryService")
 	BuildingService = Knit.GetService("BuildingService")
+	BreakingService = Knit.GetService("BreakingService")
 
 	-- Get building zone references
 	getBuildingZone()

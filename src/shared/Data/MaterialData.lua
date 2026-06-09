@@ -106,6 +106,14 @@ MaterialData.Properties = {
         breakTime = 4.0,
         requiredTier = "Iron",
     },
+    Structure = {
+        displayName = "Structure",
+        rarity = "Crafted",
+        color = Color3.fromRGB(139, 90, 43),
+        -- Breaking properties - requires hammer (Wood tier)
+        breakTime = 2.0,
+        requiredTier = "Wood",
+    },
 }
 
 -- List of all valid material names
@@ -117,6 +125,7 @@ MaterialData.ValidMaterials = {
     "RawIron",
     "RawGold",
     "RawDiamond",
+    "Structure",
 }
 
 -- Materials that can spawn in the BreakingZone (only blocks with 3D models)

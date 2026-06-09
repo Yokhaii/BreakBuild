@@ -21,7 +21,7 @@ local Actions = StarterPlayer.StarterPlayerScripts.Client.Rodux.Actions
 local InventoryActions = require(Actions.InventoryActions)
 
 -- Constants
-local HOTBAR_SIZE = 6 -- Per mode
+local HOTBAR_SIZE = 7 -- Per mode
 
 local Inventory = {}
 

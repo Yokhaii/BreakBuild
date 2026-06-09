@@ -36,6 +36,8 @@ local Workbench = {
 	},
 
 	modelPath = "ReplicatedStorage.Assets.Blueprints.Workbench",
+	completedModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.Workbench",
+	completedItemName = "CompletedWorkbench",
 	clientClass = "Workbench",
 	serverClass = "Workbench",
 	maxQuantity = 1,

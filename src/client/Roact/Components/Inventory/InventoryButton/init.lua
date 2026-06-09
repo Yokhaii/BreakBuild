@@ -1,10 +1,9 @@
 --[=[
-	ModeToggle Component
-	Button above hotbar to switch between Break and Build modes
+	InventoryButton Component
+	Button above hotbar to toggle the backpack/inventory visibility
 ]=]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local StarterPlayer = game:GetService("StarterPlayer")
 
 local Roact = require(ReplicatedStorage.Packages.Roact)
 local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
@@ -13,34 +12,35 @@ local Knit = require(ReplicatedStorage.Packages.Knit)
 
 local Config = require(script.Config)
 
-local function ModeToggle(props, hooks)
-	-- Get current mode from Rodux
-	local currentMode = RoduxHooks.useSelector(hooks, function(state)
-		return state.InventoryReducer.CurrentMode
-	end) or "Build"
-
-	-- Hover state
+local function InventoryButton(props, hooks)
 	local isHovered, setIsHovered = hooks.useState(false)
 
-	-- Get mode-specific config
-	local modeConfig = Config[currentMode] or Config.Build
+	local backpackOpen = RoduxHooks.useSelector(hooks, function(state)
+		return state.InventoryReducer.BackpackOpen
+	end) or false
 
-	-- Handle click
 	local handleClick = hooks.useCallback(function()
-		local InventoryService = Knit.GetService("InventoryService")
-		InventoryService:SwitchMode()
+		local InventoryController = Knit.GetController("InventoryController")
+		if InventoryController then
+			if InventoryController:IsBackpackOpen() then
+				InventoryController:CloseBackpack()
+			else
+				InventoryController:OpenBackpack()
+			end
+		end
 	end, {})
 
-	-- Determine background color (with hover effect)
-	local backgroundColor = isHovered and modeConfig.HoverColor or modeConfig.BackgroundColor
+	local backgroundColor = backpackOpen
+		and Config.ActiveColor
+		or (isHovered and Config.HoverColor or Config.DefaultColor)
 
 	return Roact.createElement("TextButton", {
-		Name = "ModeToggle",
+		Name = "InventoryButton",
 		Size = Config.ButtonSize,
 		Position = Config.ButtonPosition,
-		AnchorPoint = Vector2.new(1, 0.5),
+		AnchorPoint = Config.ButtonAnchorPoint,
 		BackgroundColor3 = backgroundColor,
-		Text = modeConfig.Text,
+		Text = Config.Text,
 		TextColor3 = Config.TextColor,
 		TextSize = Config.TextSize,
 		FontFace = Config.Font,
@@ -65,5 +65,5 @@ local function ModeToggle(props, hooks)
 	})
 end
 
-ModeToggle = RoactHooks.new(Roact)(ModeToggle)
-return ModeToggle
+InventoryButton = RoactHooks.new(Roact)(InventoryButton)
+return InventoryButton

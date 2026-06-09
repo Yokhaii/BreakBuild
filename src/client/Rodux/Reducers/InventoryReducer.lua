@@ -1,7 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Rodux = require(ReplicatedStorage.Packages.Rodux)
 
-local HOTBAR_SIZE = 6 -- Per mode
+local HOTBAR_SIZE = 7 -- Per mode
 
 -- Default state
 local defaultState = {

@@ -23,16 +23,18 @@ local BuildingController = Knit.CreateController({
 })
 
 -- Constants
-local PREVIEW_TRANSPARENCY = 0.7
+local PREVIEW_TRANSPARENCY = 0.5
 local WALLLIMIT_TRANSPARENCY  = 0.9
 local HIGHLIGHT_VALID_COLOR = Color3.fromRGB(230, 230, 230) -- White greyish
 local HIGHLIGHT_INVALID_COLOR = Color3.fromRGB(255, 0, 0) -- Red
-local HIGHLIGHT_REMOVAL_COLOR = Color3.fromRGB(255, 80, 80) -- Reddish for removal
 local GRID_SIZE = 2 -- 2-stud grid (same as server)
 
 -- Services (to be initialized)
 local BuildingService
 local InventoryService
+local BlueprintService
+local InventoryController
+local BlueprintPlacementController
 
 -- Building state
 local buildingMode = false
@@ -47,6 +49,15 @@ local wallLimitTweens = {} -- Array of tweens for WallLimit pulsing animation
 local removalMode = false
 local hoveredBlock = nil -- Currently hovered block model
 local removalHighlight = nil -- Highlight for the hovered block
+local removalBillboard = nil -- Billboard showing block/structure name
+local hoveredStructure = nil -- Currently hovered completed structure
+local hoveredBlueprint = nil -- Currently hovered uncompleted blueprint
+
+-- Blueprint preview state (when in Build mode, not removal mode)
+local blueprintPreviewHighlight = nil
+local blueprintPreviewBillboard = nil
+local hoveredPreviewBlueprint = nil
+local hoveredPreviewType = nil -- "blueprint" or "structure"
 
 -- References
 local buildingZone = nil
@@ -160,8 +171,9 @@ local function stopWallLimitPulsing()
 	end
 end
 
--- Detect block under cursor for removal
-local function detectBlockUnderCursor(): Model?
+-- Detect block, structure, or uncompleted blueprint under cursor for removal
+-- Returns: model, targetType ("block", "structure", "blueprint", or nil)
+local function detectRemovableUnderCursor(): (Model?, string?)
 	local camera = Workspace.CurrentCamera
 	local mouseRay = camera:ScreenPointToRay(mouse.X, mouse.Y)
 	local rayOrigin = mouseRay.Origin
@@ -171,18 +183,10 @@ local function detectBlockUnderCursor(): Model?
 	local raycastParams = RaycastParams.new()
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 
-	-- Build filter list: character and blueprint models (so we can detect blocks inside blueprints)
+	-- Build filter list: character and preview model
 	local filterList = {player.Character}
-
-	-- Add blueprint models to filter
-	local zone = getBuildingZone()
-	if zone then
-		for _, child in ipairs(zone:GetChildren()) do
-			-- Blueprint models have a BlueprintId child
-			if child:FindFirstChild("BlueprintId") then
-				table.insert(filterList, child)
-			end
-		end
+	if previewModel then
+		table.insert(filterList, previewModel)
 	end
 
 	raycastParams.FilterDescendantsInstances = filterList
@@ -191,7 +195,7 @@ local function detectBlockUnderCursor(): Model?
 	local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
 
 	if not raycastResult then
-		return nil
+		return nil, nil
 	end
 
 	local hitInstance = raycastResult.Instance
@@ -199,70 +203,292 @@ local function detectBlockUnderCursor(): Model?
 	-- Check if hit instance is inside BuildingZone
 	local zone = getBuildingZone()
 	if not zone then
-		return nil
+		return nil, nil
 	end
 
-	-- Traverse up to find if this is part of a block model in BuildingZone
+	-- Traverse up to find if this is part of a model in BuildingZone
 	local current = hitInstance
 	while current and current ~= Workspace do
 		if current.Parent == zone then
 			-- Found a child of BuildingZone
+			local ownerId = current:FindFirstChild("OwnerId")
+			local playerId = current:FindFirstChild("PlayerId")
+			local isCompletedStructure = current:FindFirstChild("IsCompletedStructure")
+			local blueprintId = current:FindFirstChild("BlueprintId")
+
+			-- Check if it's a completed structure
+			if isCompletedStructure and isCompletedStructure.Value then
+				if ownerId and ownerId.Value == player.UserId then
+					return current, "structure"
+				end
+			end
+
+			-- Check if it's an uncompleted blueprint (has BlueprintId but not IsCompletedStructure)
+			if blueprintId and not isCompletedStructure then
+				if ownerId and ownerId.Value == player.UserId then
+					return current, "blueprint"
+				end
+			end
+
 			-- Check if it has BlockId (placed blocks have this)
 			local blockId = current:FindFirstChild("BlockId")
-			local playerId = current:FindFirstChild("PlayerId")
-
 			if blockId and playerId and playerId.Value == player.UserId then
 				-- This is a block placed by this player
-				return current
+				return current, "block"
 			end
 			break
 		end
 		current = current.Parent
 	end
 
-	return nil
+	return nil, nil
 end
 
--- Create or update highlight for block removal
-local function updateRemovalHighlight(block: Model?)
-	-- Remove existing highlight
+-- Get display name for a target (block, structure, or blueprint)
+local function getTargetDisplayName(target: Model?, targetType: string?): string
+	if not target or not targetType then
+		return "Unknown"
+	end
+
+	if targetType == "block" then
+		-- Get block item name from the model name (e.g., "SandBlock_Block" -> "SandBlock")
+		local blockName = target.Name:gsub("_Block$", "")
+		local itemConfig = ItemData.GetItem(blockName)
+		if itemConfig and itemConfig.displayName then
+			return itemConfig.displayName
+		end
+		return blockName
+	elseif targetType == "structure" then
+		-- Get structure type from BlueprintType value
+		local blueprintTypeValue = target:FindFirstChild("BlueprintType")
+		if blueprintTypeValue then
+			return blueprintTypeValue.Value
+		end
+		return "Structure"
+	elseif targetType == "blueprint" then
+		-- Look for BlueprintType StringValue first (like completed structures have)
+		local blueprintTypeValue = target:FindFirstChild("BlueprintType")
+		if blueprintTypeValue and blueprintTypeValue:IsA("StringValue") then
+			return blueprintTypeValue.Value .. " Blueprint"
+		end
+		-- Fallback: search for a child with "Blueprint" in the name pattern
+		for _, child in ipairs(target:GetChildren()) do
+			if child:IsA("StringValue") and child.Name == "BlueprintType" then
+				return child.Value .. " Blueprint"
+			end
+		end
+		return "Blueprint"
+	end
+
+	return "Unknown"
+end
+
+-- Create or update highlight for block, structure, or blueprint removal
+local function updateRemovalHighlight(target: Model?, targetType: string?)
+	-- Remove existing highlight and billboard
 	if removalHighlight then
 		removalHighlight:Destroy()
 		removalHighlight = nil
 	end
+	if removalBillboard then
+		removalBillboard:Destroy()
+		removalBillboard = nil
+	end
 
-	-- If no block, we're done
-	if not block then
-		hoveredBlock = nil
+	-- Clear all hovered states
+	hoveredBlock = nil
+	hoveredStructure = nil
+	hoveredBlueprint = nil
+
+	-- If no target, we're done
+	if not target or not targetType then
 		return
 	end
 
-	hoveredBlock = block
+	-- Set the appropriate hovered state
+	if targetType == "structure" then
+		hoveredStructure = target
+	elseif targetType == "blueprint" then
+		hoveredBlueprint = target
+	else
+		hoveredBlock = target
+	end
 
-	-- Create new highlight
+	-- Get target part for billboard
+	local targetPart
+	if target:IsA("BasePart") then
+		targetPart = target
+	elseif target:IsA("Model") and target.PrimaryPart then
+		targetPart = target.PrimaryPart
+	elseif target:IsA("Model") then
+		targetPart = target:FindFirstChildWhichIsA("BasePart")
+	end
+
+	-- For blueprints, use the HighlightProxy model if it exists (Glass material supports highlights on transparent parts)
+	local highlightTarget = target
+	if targetType == "blueprint" and target:IsA("Model") then
+		local highlightProxy = target:FindFirstChild("HighlightProxy")
+		if highlightProxy then
+			highlightTarget = highlightProxy
+		end
+	end
+
+	-- Create new highlight (same style as BreakingController but with slight red fill)
 	local highlight = Instance.new("Highlight")
-	highlight.FillTransparency = 0.5
-	highlight.OutlineTransparency = 0
-	highlight.OutlineColor = HIGHLIGHT_REMOVAL_COLOR
-	highlight.FillColor = HIGHLIGHT_REMOVAL_COLOR
-	highlight.Adornee = block
-	highlight.Parent = block
+	highlight.FillTransparency = 0.9
+	highlight.FillColor = Color3.fromRGB(255, 0, 0) -- Red fill
+	highlight.OutlineTransparency = 0.7
+	highlight.OutlineColor = Color3.new(0, 0, 0) -- Black outline
+	highlight.Adornee = highlightTarget
+	highlight.Parent = target
 
 	removalHighlight = highlight
+
+	-- Find BillboardAttach attachment for blueprints/structures, or use targetPart for blocks
+	local billboardAdornee = nil
+	if targetType == "blueprint" or targetType == "structure" then
+		-- Search for BillboardAttach attachment in the model
+		billboardAdornee = target:FindFirstChild("BillboardAttach", true)
+	end
+
+	-- Fallback to targetPart if no attachment found
+	if not billboardAdornee then
+		billboardAdornee = targetPart
+	end
+
+	-- Create billboard with name above the target
+	if billboardAdornee then
+		local displayName = getTargetDisplayName(target, targetType)
+
+		local billboard = Instance.new("BillboardGui")
+		billboard.Size = UDim2.new(2, 0, 2, 0)
+		billboard.StudsOffset = Vector3.new(0, 0, 0) -- No offset needed when using attachment
+		billboard.Adornee = billboardAdornee
+		billboard.AlwaysOnTop = true
+
+		local textLabel = Instance.new("TextLabel")
+		textLabel.Size = UDim2.new(1, 0, 1, 0)
+		textLabel.BackgroundTransparency = 1
+		textLabel.Text = displayName
+		textLabel.TextColor3 = Color3.new(1, 1, 1)
+		textLabel.TextStrokeTransparency = 0.5
+		textLabel.Font = Enum.Font.GothamBold
+		textLabel.TextScaled = true
+		textLabel.Parent = billboard
+
+		billboard.Parent = target
+		removalBillboard = billboard
+	end
 end
 
--- Update removal mode (detect and highlight blocks)
+-- Update removal mode (detect and highlight blocks/structures/blueprints)
 local function updateRemovalMode()
 	if not removalMode then
 		return
 	end
 
-	-- Detect block under cursor
-	local block = detectBlockUnderCursor()
+	-- Detect removable target under cursor
+	local target, targetType = detectRemovableUnderCursor()
+
+	-- Get current hovered target for comparison
+	local currentTarget = hoveredStructure or hoveredBlueprint or hoveredBlock
 
 	-- Update highlight (only if changed)
-	if block ~= hoveredBlock then
-		updateRemovalHighlight(block)
+	if target ~= currentTarget then
+		updateRemovalHighlight(target, targetType)
+	end
+end
+
+-- Clear blueprint preview highlight
+local function clearBlueprintPreviewHighlight()
+	if blueprintPreviewHighlight then
+		blueprintPreviewHighlight:Destroy()
+		blueprintPreviewHighlight = nil
+	end
+	if blueprintPreviewBillboard then
+		blueprintPreviewBillboard:Destroy()
+		blueprintPreviewBillboard = nil
+	end
+	hoveredPreviewBlueprint = nil
+	hoveredPreviewType = nil
+end
+
+-- Update blueprint preview highlight (for Build mode, not removal mode)
+-- Reuses detectRemovableUnderCursor but only shows highlight for blueprints and structures (no red fill)
+local function updateBlueprintPreviewMode()
+	-- Use same detection as removal mode
+	local target, targetType = detectRemovableUnderCursor()
+
+	-- Only show highlight for blueprints and structures (not blocks)
+	if targetType ~= "blueprint" and targetType ~= "structure" then
+		target = nil
+		targetType = nil
+	end
+
+	-- If same target, no change needed
+	if target == hoveredPreviewBlueprint then
+		return
+	end
+
+	-- Clear existing highlight
+	clearBlueprintPreviewHighlight()
+	hoveredPreviewBlueprint = target
+	hoveredPreviewType = targetType
+
+	if not target then
+		return
+	end
+
+	-- For blueprints, use the HighlightProxy model if it exists (for transparent parts)
+	local highlightTarget = target
+	if targetType == "blueprint" then
+		local highlightProxy = target:FindFirstChild("HighlightProxy")
+		if highlightProxy then
+			highlightTarget = highlightProxy
+		end
+	end
+
+	-- Create highlight (black outline, no red fill - just preview)
+	local highlight = Instance.new("Highlight")
+	highlight.FillTransparency = 1
+	highlight.OutlineTransparency = 0.7
+	highlight.OutlineColor = Color3.new(0, 0, 0) -- Black outline
+	highlight.Adornee = highlightTarget
+	highlight.Parent = target
+
+	blueprintPreviewHighlight = highlight
+
+	-- Find BillboardAttach attachment for billboard positioning
+	local billboardAdornee = target:FindFirstChild("BillboardAttach", true)
+	if not billboardAdornee then
+		-- Fallback to PrimaryPart
+		if target:IsA("Model") and target.PrimaryPart then
+			billboardAdornee = target.PrimaryPart
+		end
+	end
+
+	-- Create billboard with name
+	if billboardAdornee then
+		local displayName = getTargetDisplayName(target, targetType)
+
+		local billboard = Instance.new("BillboardGui")
+		billboard.Size = UDim2.new(2, 0, 2, 0)
+		billboard.StudsOffset = Vector3.new(0, 0, 0)
+		billboard.Adornee = billboardAdornee
+		billboard.AlwaysOnTop = true
+
+		local textLabel = Instance.new("TextLabel")
+		textLabel.Size = UDim2.new(1, 0, 1, 0)
+		textLabel.BackgroundTransparency = 1
+		textLabel.Text = displayName
+		textLabel.TextColor3 = Color3.new(1, 1, 1)
+		textLabel.TextStrokeTransparency = 0.5
+		textLabel.Font = Enum.Font.GothamBold
+		textLabel.TextScaled = true
+		textLabel.Parent = billboard
+
+		billboard.Parent = target
+		blueprintPreviewBillboard = billboard
 	end
 end
 -- Simple client-side bounds check (for preview color only)
@@ -593,6 +819,9 @@ local function startRemovalMode()
 		stopBuildingMode()
 	end
 
+	-- Clear blueprint preview (removal mode has its own highlight)
+	clearBlueprintPreviewHighlight()
+
 	removalMode = true
 
 	-- Start pulsing animation for WallLimit parts (same as building mode)
@@ -612,13 +841,19 @@ local function stopRemovalMode()
 	-- Stop pulsing animation and hide WallLimit parts
 	stopWallLimitPulsing()
 
-	-- Remove highlight
+	-- Remove highlight and billboard
 	if removalHighlight then
 		removalHighlight:Destroy()
 		removalHighlight = nil
 	end
+	if removalBillboard then
+		removalBillboard:Destroy()
+		removalBillboard = nil
+	end
 
 	hoveredBlock = nil
+	hoveredStructure = nil
+	hoveredBlueprint = nil
 
 	print("Removal mode stopped")
 end
@@ -660,7 +895,47 @@ end
 
 -- Handle mouse click for placement or removal
 local function onMouseClick()
-	-- Handle removal mode
+	-- Handle removal mode - completed structure removal (instant)
+	if removalMode and hoveredStructure then
+		local blueprintId = hoveredStructure:FindFirstChild("BlueprintId")
+		if blueprintId and blueprintId.Value then
+			-- Call BlueprintService to remove the completed structure (gives item back)
+			BlueprintService:RemoveCompletedStructure(blueprintId.Value)
+				:andThen(function(success, itemName)
+					if success then
+						print("Structure removed successfully! Received:", itemName)
+					else
+						warn("Failed to remove structure:", itemName)
+					end
+				end)
+				:catch(function(err)
+					warn("Error removing structure:", err)
+				end)
+		end
+		return
+	end
+
+	-- Handle removal mode - uncompleted blueprint removal (instant)
+	if removalMode and hoveredBlueprint then
+		local blueprintId = hoveredBlueprint:FindFirstChild("BlueprintId")
+		if blueprintId and blueprintId.Value then
+			-- Call BlueprintService to remove the uncompleted blueprint
+			BlueprintService:RemoveUncompletedBlueprint(blueprintId.Value)
+				:andThen(function(success, itemName)
+					if success then
+						print("Blueprint removed successfully! Received:", itemName)
+					else
+						warn("Failed to remove blueprint:", itemName)
+					end
+				end)
+				:catch(function(err)
+					warn("Error removing blueprint:", err)
+				end)
+		end
+		return
+	end
+
+	-- Handle removal mode - block removal (instant)
 	if removalMode and hoveredBlock then
 		-- Get block ID
 		local blockId = hoveredBlock:FindFirstChild("BlockId")
@@ -681,8 +956,25 @@ local function onMouseClick()
 		return
 	end
 
+	-- Handle interaction with completed structures (when hovering in Build mode)
+	if hoveredPreviewBlueprint and hoveredPreviewType == "structure" then
+		local blueprintId = hoveredPreviewBlueprint:FindFirstChild("BlueprintId")
+		if blueprintId and blueprintId.Value and BlueprintPlacementController then
+			local blueprint = BlueprintPlacementController:GetActiveBlueprint(blueprintId.Value)
+			if blueprint and blueprint._OnInteract then
+				blueprint:_OnInteract(player)
+			end
+		end
+		return
+	end
+
 	-- Handle building mode
 	if not buildingMode or not currentPosition or not currentBlockItem then
+		return
+	end
+
+	-- Don't place block when hovering over completed structure
+	if hoveredPreviewBlueprint and hoveredPreviewType == "structure" then
 		return
 	end
 
@@ -699,13 +991,13 @@ local function onMouseClick()
 		end)
 end
 
--- Handle input
+-- Handle input began
 local function onInputBegan(input, gameProcessed)
 	if gameProcessed then return end
 
-	-- Left click to place block or remove block
+	-- Left click to place block, remove block/structure, or interact with structure
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		if buildingMode or removalMode then
+		if buildingMode or removalMode or hoveredPreviewBlueprint then
 			onMouseClick()
 		end
 	end
@@ -733,6 +1025,9 @@ end
 function BuildingController:KnitStart()
 	BuildingService = Knit.GetService("BuildingService")
 	InventoryService = Knit.GetService("InventoryService")
+	BlueprintService = Knit.GetService("BlueprintService")
+	InventoryController = Knit.GetController("InventoryController")
+	BlueprintPlacementController = Knit.GetController("BlueprintPlacementController")
 
 	-- Get building zone
 	getBuildingZone()
@@ -746,10 +1041,32 @@ function BuildingController:KnitStart()
 
 	-- Update preview and removal mode every frame
 	RunService.RenderStepped:Connect(function()
-		if buildingMode then
-			updatePreview()
-		elseif removalMode then
+		if removalMode then
+			-- Hammer equipped - removal mode handles highlighting
 			updateRemovalMode()
+			clearBlueprintPreviewHighlight()
+		else
+			-- Always check for blueprint preview when in Build inventory mode (not hammer)
+			if InventoryController then
+				local currentMode = InventoryController:GetCurrentMode()
+				if currentMode == "Build" then
+					updateBlueprintPreviewMode()
+				else
+					clearBlueprintPreviewHighlight()
+				end
+			end
+
+			-- Update building preview if active
+			if buildingMode then
+				-- Hide block preview when hovering over completed structure
+				if hoveredPreviewBlueprint and hoveredPreviewType == "structure" then
+					if previewModel and previewModel.Parent then
+						previewModel.Parent = nil
+					end
+				else
+					updatePreview()
+				end
+			end
 		end
 	end)
 

@@ -35,6 +35,11 @@ function ItemCategorization.getItemCategory(itemConfig)
 		return "build"
 	end
 
+	-- Completed structures go to Build hotbar (they can be placed)
+	if itemConfig.isStructure or itemConfig.type == "Structure" then
+		return "build"
+	end
+
 	-- Blocks go to Build hotbar
 	if itemConfig.type == "Block" then
 		return "build"

@@ -531,9 +531,50 @@ function BuildingService:CanPlaceBlock(player: Player, position: Vector3, itemNa
 		return false, "Outside building area"
 	end
 
-	-- Check collision
+	-- Check collision with existing placed blocks
 	if hasCollision(player, snappedPos, blockSize) then
 		return false, "Overlapping with existing block"
+	end
+
+	-- Check collision with ALL blueprint slots (even if block center is outside blueprint bounds)
+	if BlueprintService then
+		local _, area, _ = getBuildingZone()
+		if area then
+			local areaPosition = area.Position
+			local areaOrigin = Vector3.new(areaPosition.X, areaPosition.Y - 32, areaPosition.Z)
+			local halfSize = blockSize / 2
+
+			-- Get all player blueprints and check each slot for collision
+			local playerBlueprints = BlueprintService:GetPlayerBlueprints(player)
+			for _, blueprint in pairs(playerBlueprints) do
+				if blueprint.Definition and blueprint.Definition.blocks then
+					for _, blockReq in ipairs(blueprint.Definition.blocks) do
+						local slotBlockConfig = ItemData.GetItem(blockReq.blockType)
+						local slotBlockSize = slotBlockConfig and slotBlockConfig.blockSize or Vector3.new(4, 4, 4)
+						local slotHalfSize = slotBlockSize / 2
+
+						-- Calculate world position of this slot (center of the slot)
+						-- RelativePosition is anchor center, offset is relative to anchor center
+						local slotWorldPos = areaOrigin + blueprint.RelativePosition + blockReq.offset
+
+						-- AABB collision between new block and this slot
+						if math.abs(snappedPos.X - slotWorldPos.X) < (halfSize.X + slotHalfSize.X) and
+						   math.abs(snappedPos.Y - slotWorldPos.Y) < (halfSize.Y + slotHalfSize.Y) and
+						   math.abs(snappedPos.Z - slotWorldPos.Z) < (halfSize.Z + slotHalfSize.Z) then
+							-- Check if this is an exact match (same position and same size)
+							local isExactMatch = (snappedPos - slotWorldPos).Magnitude < 0.5 and
+							                     blockSize.X == slotBlockSize.X and
+							                     blockSize.Y == slotBlockSize.Y and
+							                     blockSize.Z == slotBlockSize.Z
+
+							if not isExactMatch then
+								return false, "Block would overlap with blueprint slot"
+							end
+						end
+					end
+				end
+			end
+		end
 	end
 
 	-- Check support
@@ -667,21 +708,54 @@ function BuildingService:PlaceBlock(player: Player, position: Vector3, itemName:
 	self.Client.BlockPlaced:Fire(player, blockData)
 
 	-- Check if block was placed inside a blueprint
-	print("[BuildingService] Checking if block is inside a blueprint...")
 	if BlueprintService then
-		print("[BuildingService] BlueprintService exists, calling GetBlueprintAtPosition")
 		local blueprint, offset = BlueprintService:GetBlueprintAtPosition(player, snappedPos)
 		if blueprint then
-			print("[BuildingService] Block is inside blueprint:", blueprint.Id, "at offset:", offset)
 			-- Notify blueprint system (validates correct/wrong block, tracks progress)
-			local success, isCorrect = BlueprintService:OnBlockPlacedInBlueprint(player, blueprint.Id, offset, itemName, blockId)
-			print("[BuildingService] OnBlockPlacedInBlueprint result - success:", success, "isCorrect:", isCorrect)
-		else
-			print("[BuildingService] Block is NOT inside any blueprint")
+			BlueprintService:OnBlockPlacedInBlueprint(player, blueprint.Id, offset, itemName, blockId)
 		end
-	else
-		print("[BuildingService] BlueprintService is nil!")
 	end
+
+	return true
+end
+
+-- Remove a placed block silently (no item returned - used when blocks become part of a structure)
+function BuildingService:RemoveBlockSilent(player: Player, blockId: string): boolean
+	local buildingData = getBuildingData(player)
+	if not buildingData then return false end
+
+	-- Find the block in PlacedBlocks
+	local blockIndex = nil
+	local blockData = nil
+	for index, block in ipairs(buildingData.PlacedBlocks) do
+		if block.id == blockId then
+			blockIndex = index
+			blockData = block
+			break
+		end
+	end
+
+	if not blockIndex or not blockData then
+		return false
+	end
+
+	-- Find and destroy the block in the world
+	local zone, _, _ = getBuildingZone()
+	if zone then
+		for _, child in ipairs(zone:GetChildren()) do
+			local childBlockId = child:FindFirstChild("BlockId")
+			if childBlockId and childBlockId.Value == blockId then
+				child:Destroy()
+				break
+			end
+		end
+	end
+
+	-- Remove from PlacedBlocks data (no item refund)
+	table.remove(buildingData.PlacedBlocks, blockIndex)
+
+	-- Notify client
+	self.Client.BlockRemoved:Fire(player, blockId)
 
 	return true
 end

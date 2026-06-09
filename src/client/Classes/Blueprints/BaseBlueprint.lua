@@ -14,7 +14,6 @@ setmetatable(ClientBaseBlueprint, { __index = SharedBaseBlueprint })
 
 -- Constants
 local BILLBOARD_OFFSET = Vector3.new(0, 3, 0)
-local PROGRESS_BILLBOARD_OFFSET = Vector3.new(0, 5, 0)
 local WRONG_BLOCK_HIGHLIGHT_COLOR = Color3.fromRGB(255, 50, 50)
 local CORRECT_BLOCK_HIGHLIGHT_COLOR = Color3.fromRGB(50, 255, 50)
 
@@ -25,9 +24,7 @@ function ClientBaseBlueprint.new(data)
 	-- Client-specific properties
 	self.Model = nil -- Reference to the model in workspace
 	self.HoverBillboard = nil -- BillboardGui for hover label
-	self.ProgressBillboard = nil -- BillboardGui for progress display
 	self.WrongBlockHighlights = {} -- { [blockId]: Highlight }
-	self._ProgressAttachment = nil
 
 	return self
 end
@@ -205,159 +202,8 @@ function ClientBaseBlueprint:UpdateBlockVisual(offset: Vector3)
 		end
 	else
 		-- Not filled - show blue ghost
-		part.Transparency = self.Definition.ghostTransparency or 0.7
+		part.Transparency = self.Definition.ghostTransparency or 0.6
 		part.BrickColor = BrickColor.new("Bright blue")
-	end
-end
-
--- Get progress bar color based on completion percentage
-function ClientBaseBlueprint:GetProgressColor(): Color3
-	local progress = self:GetProgress()
-
-	if progress < 33 then
-		return Color3.fromRGB(255, 100, 100) -- Red
-	elseif progress < 66 then
-		return Color3.fromRGB(255, 200, 100) -- Yellow
-	else
-		return Color3.fromRGB(100, 255, 100) -- Green
-	end
-end
-
--- Show progress billboard above the blueprint
-function ClientBaseBlueprint:ShowProgressBillboard(buildingAreaOrigin: Vector3)
-	-- Remove existing progress billboard
-	self:HideProgressBillboard()
-
-	if not self.Definition then return end
-
-	-- Create billboard
-	local billboard = Instance.new("BillboardGui")
-	billboard.Name = "BlueprintProgressBillboard"
-	billboard.Size = UDim2.new(0, 200, 0, 60)
-	billboard.StudsOffset = PROGRESS_BILLBOARD_OFFSET
-	billboard.AlwaysOnTop = true
-	billboard.LightInfluence = 0
-	billboard.MaxDistance = 100
-
-	-- Create background
-	local background = Instance.new("Frame")
-	background.Name = "Background"
-	background.Size = UDim2.fromScale(1, 1)
-	background.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-	background.BackgroundTransparency = 0.2
-	background.BorderSizePixel = 0
-	background.Parent = billboard
-
-	-- Add corner
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 8)
-	corner.Parent = background
-
-	-- Create title label
-	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Name = "TitleText"
-	titleLabel.Size = UDim2.new(1, 0, 0, 20)
-	titleLabel.Position = UDim2.new(0, 0, 0, 5)
-	titleLabel.BackgroundTransparency = 1
-	titleLabel.Text = self.Definition.displayName or self.Definition.name
-	titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	titleLabel.TextSize = 14
-	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.Parent = background
-
-	-- Create progress bar background
-	local progressBg = Instance.new("Frame")
-	progressBg.Name = "ProgressBg"
-	progressBg.Size = UDim2.new(0.9, 0, 0, 12)
-	progressBg.Position = UDim2.new(0.05, 0, 0, 30)
-	progressBg.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-	progressBg.BorderSizePixel = 0
-	progressBg.Parent = background
-
-	local progressBgCorner = Instance.new("UICorner")
-	progressBgCorner.CornerRadius = UDim.new(0, 4)
-	progressBgCorner.Parent = progressBg
-
-	-- Create progress bar fill
-	local progress = self:GetProgress() / 100
-	local progressFill = Instance.new("Frame")
-	progressFill.Name = "ProgressFill"
-	progressFill.Size = UDim2.new(progress, 0, 1, 0)
-	progressFill.BackgroundColor3 = self:GetProgressColor()
-	progressFill.BorderSizePixel = 0
-	progressFill.Parent = progressBg
-
-	local progressFillCorner = Instance.new("UICorner")
-	progressFillCorner.CornerRadius = UDim.new(0, 4)
-	progressFillCorner.Parent = progressFill
-
-	-- Create progress text
-	local progressText = Instance.new("TextLabel")
-	progressText.Name = "ProgressText"
-	progressText.Size = UDim2.new(1, 0, 0, 16)
-	progressText.Position = UDim2.new(0, 0, 0, 42)
-	progressText.BackgroundTransparency = 1
-	progressText.Text = string.format("%d / %d blocks", self:GetFilledBlockCount(), #self.Definition.blocks)
-	progressText.TextColor3 = Color3.fromRGB(200, 200, 200)
-	progressText.TextSize = 12
-	progressText.Font = Enum.Font.Gotham
-	progressText.Parent = background
-
-	-- Position at the center of the blueprint
-	local blueprintCenter = buildingAreaOrigin + self.RelativePosition + (self.Definition.size / 2)
-
-	-- Create an attachment point part (invisible)
-	local attachPart = Instance.new("Part")
-	attachPart.Name = "ProgressAttachment"
-	attachPart.Size = Vector3.new(0.1, 0.1, 0.1)
-	attachPart.Position = blueprintCenter
-	attachPart.Anchored = true
-	attachPart.CanCollide = false
-	attachPart.Transparency = 1
-	attachPart.Parent = workspace
-
-	billboard.Adornee = attachPart
-	billboard.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
-
-	self.ProgressBillboard = billboard
-	self._ProgressAttachment = attachPart
-end
-
--- Hide progress billboard
-function ClientBaseBlueprint:HideProgressBillboard()
-	if self.ProgressBillboard then
-		self.ProgressBillboard:Destroy()
-		self.ProgressBillboard = nil
-	end
-
-	if self._ProgressAttachment then
-		self._ProgressAttachment:Destroy()
-		self._ProgressAttachment = nil
-	end
-end
-
--- Update progress billboard (call after blocks change)
-function ClientBaseBlueprint:UpdateProgressBillboard()
-	if not self.ProgressBillboard or not self.Definition then return end
-
-	local background = self.ProgressBillboard:FindFirstChild("Background")
-	if not background then return end
-
-	-- Update progress bar
-	local progressBg = background:FindFirstChild("ProgressBg")
-	if progressBg then
-		local progressFill = progressBg:FindFirstChild("ProgressFill")
-		if progressFill then
-			local progress = self:GetProgress() / 100
-			progressFill.Size = UDim2.new(progress, 0, 1, 0)
-			progressFill.BackgroundColor3 = self:GetProgressColor()
-		end
-	end
-
-	-- Update progress text
-	local progressText = background:FindFirstChild("ProgressText")
-	if progressText then
-		progressText.Text = string.format("%d / %d blocks", self:GetFilledBlockCount(), #self.Definition.blocks)
 	end
 end
 
@@ -394,7 +240,6 @@ end
 -- Cleanup
 function ClientBaseBlueprint:Destroy()
 	self:HideHoverLabel()
-	self:HideProgressBillboard()
 	self:ClearWrongBlockHighlights()
 	self.Model = nil
 end

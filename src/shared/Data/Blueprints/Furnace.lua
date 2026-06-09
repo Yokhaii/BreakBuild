@@ -21,6 +21,8 @@ local Furnace = {
 
 	-- Model in ReplicatedStorage with PrimaryPart set as anchor
 	modelPath = "ReplicatedStorage.Assets.Blueprints.Furnace",
+	completedModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.Furnace",
+	completedItemName = "CompletedFurnace",
 	clientClass = "Furnace",
 	serverClass = "Furnace",
 	maxQuantity = 1,

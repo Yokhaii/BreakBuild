@@ -53,6 +53,10 @@ local currentPosition = nil -- Position of the anchor (PrimaryPart)
 local currentRotation = 0 -- Reserved for future rotation support (0, 90, 180, 270)
 local isValidPlacement = false
 
+-- Structure placement state (for completed blueprints)
+local isStructurePlacement = false -- true when placing a completed structure, false for blueprint
+local currentStructureItemName = nil -- Item name when placing a structure
+
 -- References
 local buildingZone = nil
 local buildingArea = nil
@@ -144,14 +148,14 @@ local function areAllBlocksWithinBounds(anchorPosition: Vector3, definition, are
 	return true
 end
 
--- Get the blueprint model from ReplicatedStorage
-local function getBlueprintModel(definition)
-	if not definition or not definition.modelPath then
+-- Get a model from ReplicatedStorage by path
+local function getModelByPath(modelPath)
+	if not modelPath then
 		return nil
 	end
 
 	-- Parse model path (e.g., "ReplicatedStorage.Assets.Blueprints.Workbench")
-	local pathParts = string.split(definition.modelPath, ".")
+	local pathParts = string.split(modelPath, ".")
 	local current = ReplicatedStorage
 
 	-- Skip first part if it's "ReplicatedStorage"
@@ -163,7 +167,7 @@ local function getBlueprintModel(definition)
 	for i = startIndex, #pathParts do
 		current = current:FindFirstChild(pathParts[i])
 		if not current then
-			warn("[BlueprintPlacementController] Model not found at path:", definition.modelPath)
+			warn("[BlueprintPlacementController] Model not found at path:", modelPath)
 			return nil
 		end
 	end
@@ -171,9 +175,26 @@ local function getBlueprintModel(definition)
 	return current
 end
 
--- Create preview model for blueprint placement
+-- Get the blueprint model from ReplicatedStorage
+local function getBlueprintModel(definition)
+	if not definition or not definition.modelPath then
+		return nil
+	end
+	return getModelByPath(definition.modelPath)
+end
+
+-- Get the completed structure model from ReplicatedStorage
+local function getCompletedModel(definition)
+	if not definition or not definition.completedModelPath then
+		return nil
+	end
+	return getModelByPath(definition.completedModelPath)
+end
+
+-- Create preview model for blueprint or structure placement
 -- Clones the actual model and makes it transparent for preview
-local function createPreviewModel(blueprintType)
+-- forStructure: if true, uses completedModelPath instead of modelPath
+local function createPreviewModel(blueprintType, forStructure)
 	local definition = BlueprintDefinitions.GetDefinition(blueprintType)
 	if not definition then
 		warn("[BlueprintPlacementController] Unknown blueprint type:", blueprintType)
@@ -181,28 +202,38 @@ local function createPreviewModel(blueprintType)
 	end
 
 	-- Get the source model from ReplicatedStorage
-	local sourceModel = getBlueprintModel(definition)
-	if not sourceModel then
-		warn("[BlueprintPlacementController] Could not find blueprint model for:", blueprintType)
-		return nil
+	local sourceModel
+	if forStructure then
+		sourceModel = getCompletedModel(definition)
+		if not sourceModel then
+			warn("[BlueprintPlacementController] Could not find completed model for:", blueprintType)
+			return nil
+		end
+	else
+		sourceModel = getBlueprintModel(definition)
+		if not sourceModel then
+			warn("[BlueprintPlacementController] Could not find blueprint model for:", blueprintType)
+			return nil
+		end
 	end
 
 	if not sourceModel:IsA("Model") then
-		warn("[BlueprintPlacementController] Blueprint path does not point to a Model:", definition.modelPath)
+		local modelPath = forStructure and definition.completedModelPath or definition.modelPath
+		warn("[BlueprintPlacementController] Model path does not point to a Model:", modelPath)
 		return nil
 	end
 
 	if not sourceModel.PrimaryPart then
-		warn("[BlueprintPlacementController] Blueprint model has no PrimaryPart (anchor):", blueprintType)
+		warn("[BlueprintPlacementController] Model has no PrimaryPart (anchor):", blueprintType)
 		return nil
 	end
 
 	-- Clone the model for preview
-	local previewModel = sourceModel:Clone()
-	previewModel.Name = "BlueprintPreview_" .. blueprintType
+	local preview = sourceModel:Clone()
+	preview.Name = (forStructure and "StructurePreview_" or "BlueprintPreview_") .. blueprintType
 
 	-- Make all parts transparent and non-collidable
-	for _, descendant in ipairs(previewModel:GetDescendants()) do
+	for _, descendant in ipairs(preview:GetDescendants()) do
 		if descendant:IsA("BasePart") then
 			descendant.Transparency = PREVIEW_TRANSPARENCY
 			descendant.CanCollide = false
@@ -212,14 +243,14 @@ local function createPreviewModel(blueprintType)
 	end
 
 	-- Also apply to PrimaryPart
-	if previewModel.PrimaryPart then
-		previewModel.PrimaryPart.Transparency = PREVIEW_TRANSPARENCY
-		previewModel.PrimaryPart.CanCollide = false
-		previewModel.PrimaryPart.Anchored = true
-		previewModel.PrimaryPart.CastShadow = false
+	if preview.PrimaryPart then
+		preview.PrimaryPart.Transparency = PREVIEW_TRANSPARENCY
+		preview.PrimaryPart.CanCollide = false
+		preview.PrimaryPart.Anchored = true
+		preview.PrimaryPart.CastShadow = false
 	end
 
-	return previewModel
+	return preview
 end
 
 -- Create highlight for preview
@@ -368,8 +399,9 @@ local function getAnchorBlockSize(definition)
 	return DEFAULT_BLOCK_SIZE
 end
 
--- Start placement mode
-local function startPlacementMode(blueprintType)
+-- Start placement mode for blueprint or structure
+-- forStructure: if true, placing a completed structure; structureItemName is the item name
+local function startPlacementMode(blueprintType, forStructure, structureItemName)
 	if placementMode then
 		stopPlacementMode()
 	end
@@ -384,13 +416,15 @@ local function startPlacementMode(blueprintType)
 	currentBlueprintType = blueprintType
 	currentDefinition = definition
 	currentRotation = 0 -- Reserved for future rotation support
+	isStructurePlacement = forStructure or false
+	currentStructureItemName = structureItemName
 
 	-- Get anchor block size for proper grid snapping
 	anchorBlockSize = getAnchorBlockSize(definition)
 	print("[BlueprintPlacementController] Anchor block size:", anchorBlockSize)
 
 	-- Create preview model (clones from ReplicatedStorage)
-	previewModel = createPreviewModel(blueprintType)
+	previewModel = createPreviewModel(blueprintType, isStructurePlacement)
 	if not previewModel then
 		warn("[BlueprintPlacementController] Failed to create preview model")
 		stopPlacementMode()
@@ -400,7 +434,8 @@ local function startPlacementMode(blueprintType)
 	-- Create highlight
 	previewHighlight = createHighlight(previewModel)
 
-	print("[BlueprintPlacementController] Started placement mode for:", blueprintType)
+	local modeType = isStructurePlacement and "structure" or "blueprint"
+	print("[BlueprintPlacementController] Started", modeType, "placement mode for:", blueprintType)
 end
 
 -- Stop placement mode
@@ -416,6 +451,8 @@ local function stopPlacementMode()
 	currentRotation = 0
 	isValidPlacement = false
 	anchorBlockSize = DEFAULT_BLOCK_SIZE
+	isStructurePlacement = false
+	currentStructureItemName = nil
 
 	-- Destroy preview
 	if previewModel then
@@ -433,14 +470,21 @@ local function onItemEquipped(slot, itemName)
 	local itemConfig = ItemData.GetItem(itemName)
 
 	if itemConfig and itemConfig.isBlueprintTool then
-		-- Get the blueprint type directly from the item config
+		-- Blueprint tool - place a new blueprint ghost
 		if itemConfig.blueprintType then
-			startPlacementMode(itemConfig.blueprintType)
+			startPlacementMode(itemConfig.blueprintType, false, nil)
 		else
 			warn("[BlueprintPlacementController] Blueprint item missing blueprintType in config:", itemName)
 		end
+	elseif itemConfig and itemConfig.isStructure then
+		-- Structure item - place a completed structure
+		if itemConfig.blueprintType then
+			startPlacementMode(itemConfig.blueprintType, true, itemName)
+		else
+			warn("[BlueprintPlacementController] Structure item missing blueprintType in config:", itemName)
+		end
 	else
-		-- Not a blueprint tool, stop placement mode if active
+		-- Not a blueprint or structure, stop placement mode if active
 		if placementMode then
 			stopPlacementMode()
 		end
@@ -471,24 +515,45 @@ local function onMouseClick()
 	print("[BlueprintPlacementController] Area origin:", areaOrigin)
 	print("[BlueprintPlacementController] Relative position:", currentPosition - areaOrigin)
 
-	-- Place blueprint via server
-	BlueprintService:PlaceBlueprint(currentPosition, currentBlueprintType, currentRotation)
-		:andThen(function(success, blueprintIdOrError)
-			if success then
-				print("[BlueprintPlacementController] Blueprint placed:", blueprintIdOrError)
+	if isStructurePlacement then
+		-- Place completed structure via server
+		BlueprintService:PlaceStructure(currentPosition, currentStructureItemName, currentRotation)
+			:andThen(function(success, structureIdOrError)
+				if success then
+					print("[BlueprintPlacementController] Structure placed:", structureIdOrError)
 
-				-- Stop placement mode after successful placement
-				stopPlacementMode()
+					-- Stop placement mode after successful placement
+					stopPlacementMode()
 
-				-- Unequip the item (consume it)
-				InventoryService:UnequipItem()
-			else
-				warn("[BlueprintPlacementController] Failed to place blueprint:", blueprintIdOrError)
-			end
-		end)
-		:catch(function(err)
-			warn("[BlueprintPlacementController] Error placing blueprint:", err)
-		end)
+					-- Unequip the item (item is consumed by server)
+					InventoryService:UnequipItem()
+				else
+					warn("[BlueprintPlacementController] Failed to place structure:", structureIdOrError)
+				end
+			end)
+			:catch(function(err)
+				warn("[BlueprintPlacementController] Error placing structure:", err)
+			end)
+	else
+		-- Place blueprint via server
+		BlueprintService:PlaceBlueprint(currentPosition, currentBlueprintType, currentRotation)
+			:andThen(function(success, blueprintIdOrError)
+				if success then
+					print("[BlueprintPlacementController] Blueprint placed:", blueprintIdOrError)
+
+					-- Stop placement mode after successful placement
+					stopPlacementMode()
+
+					-- Unequip the item (consume it)
+					InventoryService:UnequipItem()
+				else
+					warn("[BlueprintPlacementController] Failed to place blueprint:", blueprintIdOrError)
+				end
+			end)
+			:catch(function(err)
+				warn("[BlueprintPlacementController] Error placing blueprint:", err)
+			end)
+	end
 end
 
 -- Handle rotation input (reserved for future use)
@@ -521,6 +586,29 @@ local function onInputBegan(input, gameProcessed)
 	-- end
 end
 
+-- Create client blueprint instance based on type (loads specific class if available)
+local function createClientBlueprintInstance(data)
+	local definition = BlueprintDefinitions.GetDefinition(data.blueprintType)
+	if not definition then
+		return ClientBaseBlueprint.new(data)
+	end
+
+	-- Try to load specific client class
+	local clientClassName = definition.clientClass
+	if clientClassName then
+		local success, classModule = pcall(function()
+			return require(StarterPlayer.StarterPlayerScripts.Client.Classes.Blueprints[clientClassName])
+		end)
+
+		if success and classModule then
+			return classModule.new(data)
+		end
+	end
+
+	-- Fallback to base class
+	return ClientBaseBlueprint.new(data)
+end
+
 -- Handle blueprint placed signal from server
 local function onBlueprintPlaced(blueprintData)
 	-- Validate blueprintData is a table with required fields
@@ -542,8 +630,8 @@ local function onBlueprintPlaced(blueprintData)
 		return
 	end
 
-	-- Create client-side blueprint instance
-	local blueprint = ClientBaseBlueprint.new(blueprintData)
+	-- Create client-side blueprint instance (uses specific class if available)
+	local blueprint = createClientBlueprintInstance(blueprintData)
 	activeBlueprints[blueprintData.id] = blueprint
 
 	-- Find and store reference to the model
@@ -557,10 +645,6 @@ local function onBlueprintPlaced(blueprintData)
 			if bpId and bpId.Value == blueprintData.id then
 				blueprint:SetModel(child)
 				blueprint:UpdateVisuals()
-
-				-- Show progress billboard
-				local areaOrigin = getBuildingAreaOrigin()
-				blueprint:ShowProgressBillboard(areaOrigin)
 				break
 			end
 		end
@@ -580,15 +664,8 @@ end
 
 -- Handle block filled in blueprint
 local function onBlueprintBlockFilled(blueprintId, offset, blockType, isCorrect)
-	print("[BlueprintPlacementController] onBlueprintBlockFilled called!")
-	print("[BlueprintPlacementController] BlueprintId:", blueprintId, "Offset:", offset.x, offset.y, offset.z)
-	print("[BlueprintPlacementController] BlockType:", blockType, "IsCorrect:", isCorrect)
-
 	local blueprint = activeBlueprints[blueprintId]
-	if not blueprint then
-		print("[BlueprintPlacementController] WARNING: Blueprint not found in activeBlueprints!")
-		return
-	end
+	if not blueprint then return end
 
 	-- Update filled blocks
 	local offsetKey = string.format("%d,%d,%d", offset.x, offset.y, offset.z)
@@ -596,7 +673,6 @@ local function onBlueprintBlockFilled(blueprintId, offset, blockType, isCorrect)
 		blockType = blockType,
 		blockId = "unknown", -- We don't have the blockId on client for this event
 	}
-	print("[BlueprintPlacementController] Stored block at key:", offsetKey)
 
 	-- Update visuals
 	local offsetVector = Vector3.new(offset.x, offset.y, offset.z)
@@ -604,17 +680,6 @@ local function onBlueprintBlockFilled(blueprintId, offset, blockType, isCorrect)
 
 	-- Flash effect for feedback
 	blueprint:FlashBlockSlot(offsetVector, isCorrect)
-
-	-- Update progress billboard
-	blueprint:UpdateProgressBillboard()
-
-	-- Debug: Show current progress
-	local filledCount = 0
-	for _ in pairs(blueprint.FilledBlocks) do
-		filledCount = filledCount + 1
-	end
-	local totalRequired = blueprint.Definition and #blueprint.Definition.blocks or 0
-	print("[BlueprintPlacementController] Progress:", filledCount, "/", totalRequired, "blocks filled")
 
 	-- If wrong block, find the block model and add highlight
 	if not isCorrect then
@@ -659,28 +724,16 @@ end
 
 -- Handle blueprint completed
 local function onBlueprintCompleted(blueprintId)
-	print("[BlueprintPlacementController] *** BLUEPRINT COMPLETED SIGNAL RECEIVED! ***")
-	print("[BlueprintPlacementController] Blueprint ID:", blueprintId)
-
 	local blueprint = activeBlueprints[blueprintId]
-	if not blueprint then
-		print("[BlueprintPlacementController] WARNING: Blueprint not found in activeBlueprints!")
-		return
-	end
+	if not blueprint then return end
 
-	print("[BlueprintPlacementController] Blueprint found, updating state...")
 	blueprint.CompletedAt = os.time()
 
 	-- Update visuals
 	blueprint:UpdateVisuals()
 
-	-- Hide progress billboard (blueprint is complete)
-	blueprint:HideProgressBillboard()
-
 	-- Clear any wrong block highlights
 	blueprint:ClearWrongBlockHighlights()
-
-	print("[BlueprintPlacementController] Blueprint completion handling done!")
 end
 
 --|| Public Functions ||--
@@ -734,6 +787,7 @@ function BlueprintPlacementController:KnitStart()
 	BlueprintService.BlueprintBlockFilled:Connect(onBlueprintBlockFilled)
 	BlueprintService.BlueprintBlockRemoved:Connect(onBlueprintBlockRemoved)
 	BlueprintService.BlueprintCompleted:Connect(onBlueprintCompleted)
+	BlueprintService.StructurePlaced:Connect(onBlueprintPlaced) -- Structure uses same handler
 
 	-- Update preview every frame
 	RunService.RenderStepped:Connect(function()

@@ -1,6 +1,7 @@
 --[=[
 	Backpack Component
 	Displays the player's backpack items in a scrolling grid
+	Styled like BlueprintCard with StudBackground
 ]=]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11,11 +12,15 @@ local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
 local RoduxHooks = require(ReplicatedStorage.Packages.Roduxhooks)
 local Knit = require(ReplicatedStorage.Packages.Knit)
 
+local Components = StarterPlayer.StarterPlayerScripts.Client.Roact.Components
+local StudBackground = require(Components.Global.StudBackground)
+
 local BackpackSlot = require(script.Parent.BackpackSlot)
 local SearchBar = require(script.Parent.SearchBar)
 
+local Config = require(script.Config)
+
 local function Backpack(props, hooks)
-	-- Get inventory state from Rodux
 	local inventoryState = RoduxHooks.useSelector(hooks, function(state)
 		return state.InventoryReducer
 	end)
@@ -24,7 +29,6 @@ local function Backpack(props, hooks)
 	local isOpen = inventoryState.BackpackOpen
 	local searchQuery = inventoryState.SearchQuery or ""
 
-	-- Filter items by search query
 	local filteredItems = hooks.useMemo(function()
 		if searchQuery == "" then
 			return backpackItems
@@ -43,16 +47,13 @@ local function Backpack(props, hooks)
 		return filtered
 	end, { backpackItems, searchQuery })
 
-	-- Handle slot click
 	local function handleSlotClick(index, item)
-		-- Can be used for item preview or other actions
 		local InventoryController = Knit.GetController("InventoryController")
 		if InventoryController and InventoryController.OnSlotHighlighted then
 			InventoryController.OnSlotHighlighted(index, item)
 		end
 	end
 
-	-- Handle drag start
 	local function handleDragStart(index, item)
 		local InventoryController = Knit.GetController("InventoryController")
 		if InventoryController and InventoryController.StartDrag then
@@ -60,73 +61,99 @@ local function Backpack(props, hooks)
 		end
 	end
 
-	-- Don't render if not open
 	if not isOpen then
 		return Roact.createElement("Frame", {
 			Visible = false,
 		})
 	end
 
-	-- Create scrolling frame children
 	local scrollChildren = {
 		UIGridLayout = Roact.createElement("UIGridLayout", {
-			CellSize = UDim2.fromOffset(66, 68),
-			CellPadding = UDim2.fromOffset(5, 5),
+			CellSize = Config.CellSize,
+			CellPadding = Config.CellPadding,
 			FillDirection = Enum.FillDirection.Horizontal,
 			SortOrder = Enum.SortOrder.LayoutOrder,
 		}),
 	}
 
-	-- Add slots to scrollChildren
-	for i, item in ipairs(filteredItems) do
+	local totalSlots = math.max(Config.MaxSlots, #filteredItems)
+	for i = 1, totalSlots do
+		local item = filteredItems[i]
 		scrollChildren["Slot" .. i] = Roact.createElement(BackpackSlot, {
 			index = i,
 			item = item,
-			onSlotClick = handleSlotClick,
-			onDragStart = handleDragStart,
+			onSlotClick = item and handleSlotClick or nil,
+			onDragStart = item and handleDragStart or nil,
 		})
 	end
 
 	return Roact.createElement("Frame", {
 		Name = "Backpack",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.695),
-		Size = UDim2.fromOffset(706, 298),
-		BackgroundColor3 = Color3.fromRGB(91, 91, 91),
-		BackgroundTransparency = 0.7,
+		AnchorPoint = Config.FrameAnchorPoint,
+		Position = Config.FramePosition,
+		Size = Config.FrameSize,
+		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 	}, {
-		UICorner = Roact.createElement("UICorner", {
-			CornerRadius = UDim.new(0, 8),
-		}),
-
-		UIStroke = Roact.createElement("UIStroke", {
-			Thickness = 1,
-			Color = Color3.fromRGB(0, 0, 0),
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
-		}),
-
 		UIAspectRatioConstraint = Roact.createElement("UIAspectRatioConstraint", {
-			AspectRatio = 2.4,
+			AspectRatio = Config.AspectRatio,
 			AspectType = Enum.AspectType.FitWithinMaxSize,
 			DominantAxis = Enum.DominantAxis.Width,
 		}),
 
-		ScrollingFrame = Roact.createElement("ScrollingFrame", {
-			Name = "ScrollingFrame",
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromScale(0.99, 0.98),
+		SearchBar = Roact.createElement(SearchBar),
+
+		BackpackCard = Roact.createElement("Frame", {
+			Name = "BackpackCard",
+			Size = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
-			ScrollBarThickness = 12,
-			ScrollBarImageColor3 = Color3.fromRGB(0, 0, 0),
-			CanvasSize = UDim2.fromScale(0, 0),
-			AutomaticCanvasSize = Enum.AutomaticSize.Y,
-			ScrollingDirection = Enum.ScrollingDirection.Y,
-		}, scrollChildren),
+			ClipsDescendants = true,
+		}, {
+			UICorner = Roact.createElement("UICorner", {
+				CornerRadius = Config.CornerRadius,
+			}),
 
-		SearchBar = Roact.createElement(SearchBar),
+			UIStroke = Roact.createElement("UIStroke", {
+				Color = Config.StrokeColor,
+				Thickness = Config.StrokeThickness,
+				Transparency = Config.StrokeTransparency,
+			}),
+
+			CardBackground = Roact.createElement(StudBackground, {
+				ZIndex = 1,
+				BackgroundColor = Config.StudBackgroundColor,
+				ImageTransparency = Config.StudImageTransparency,
+				CornerRadius = Config.CornerRadius,
+			}),
+
+			SlotsContainer = Roact.createElement("Frame", {
+				Name = "SlotsContainer",
+				Size = UDim2.fromScale(1, 1),
+				BackgroundTransparency = 1,
+				ZIndex = 2,
+			}, {
+				UIPadding = Roact.createElement("UIPadding", {
+					PaddingLeft = Config.PaddingLeft,
+					PaddingRight = Config.PaddingRight,
+					PaddingTop = Config.PaddingTop,
+					PaddingBottom = Config.PaddingBottom,
+				}),
+
+				ScrollingFrame = Roact.createElement("ScrollingFrame", {
+					Name = "ScrollingFrame",
+					Size = UDim2.fromScale(1, 1),
+					BackgroundTransparency = 1,
+					BorderSizePixel = 0,
+					ScrollBarThickness = Config.ScrollBarThickness,
+					ScrollBarImageColor3 = Config.ScrollBarColor,
+					CanvasSize = UDim2.fromScale(0, 0),
+					AutomaticCanvasSize = Enum.AutomaticSize.Y,
+					ScrollingDirection = Enum.ScrollingDirection.Y,
+					ZIndex = 2,
+				}, scrollChildren),
+			}),
+		}),
 	})
 end
 
