@@ -5,7 +5,6 @@ local Signal = require(game:GetService("ReplicatedStorage").Packages.Signal)
 -- Services
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
 
 -- Data
 local ItemData = require(ReplicatedStorage.Shared.Data.Items)
@@ -17,18 +16,17 @@ local DataService
 local InventoryService = Knit.CreateService({
 	Name = "InventoryService",
 	Client = {
-		-- Signals for client updates
-		InventoryUpdated = Knit.CreateSignal(), -- Fires when inventory changes
-		ItemEquipped = Knit.CreateSignal(), -- (slot, itemName)
-		ItemUnequipped = Knit.CreateSignal(), -- ()
-		ItemDropped = Knit.CreateSignal(), -- (itemName, quantity)
-		ModeChanged = Knit.CreateSignal(), -- (newMode)
+		InventoryUpdated = Knit.CreateSignal(),
+		ItemEquipped = Knit.CreateSignal(),
+		ItemUnequipped = Knit.CreateSignal(),
+		ItemDropped = Knit.CreateSignal(),
 	},
 })
 
 -- Constants
-local HOTBAR_SIZE = 7 -- Per mode (6 slots each)
-local DROP_DISTANCE = 5 -- Distance in front of player to drop items
+local HOTBAR_SIZE = 7
+local BACKPACK_SIZE = 21
+local DROP_DISTANCE = 5
 
 -- Types
 type InventoryItem = {
@@ -38,12 +36,24 @@ type InventoryItem = {
 }
 
 -- Private variables
-local equippedModels: {[Player]: Model?} = {} -- Currently equipped model instances
-local equippedWelds: {[Player]: WeldConstraint?} = {} -- Welds for equipped items
+local equippedModels: {[Player]: Model?} = {}
+local equippedWelds: {[Player]: WeldConstraint?} = {}
 
 --|| Private Functions ||--
 
--- Generate unique item ID
+-- Backpack uses string keys for JSON-safe persistence
+local function bpKey(slot: number): string
+	return tostring(slot)
+end
+
+local function bpGet(backpack, slot: number)
+	return backpack[bpKey(slot)]
+end
+
+local function bpSet(backpack, slot: number, item)
+	backpack[bpKey(slot)] = item
+end
+
 local function generateItemId(player: Player): string
 	local playerData = DataService:GetData(player)
 	if not playerData then return tostring(tick()) end
@@ -54,253 +64,104 @@ local function generateItemId(player: Player): string
 	return id
 end
 
--- Get the appropriate hotbar based on mode
-local function getHotbarForMode(inventory, mode: string)
-	if mode == "Break" then
-		return inventory.BreakHotbar
-	else
-		return inventory.BuildHotbar
-	end
-end
-
--- Get current mode's hotbar
-local function getCurrentHotbar(inventory)
-	return getHotbarForMode(inventory, inventory.CurrentMode)
-end
-
--- Ensure Hammer is in Build hotbar slot 1 (permanent tool)
-local function ensureHammerInBuildSlot1(inventory)
-	-- Check if Hammer is already in BuildHotbar slot 1
-	if inventory.BuildHotbar[1] and inventory.BuildHotbar[1].itemName == "Hammer" then
-		return -- Already there, nothing to do
+-- Migrate old formats to string-keyed backpack
+local function migrateBackpack(inventory)
+	local oldBackpack = inventory.Backpack
+	if not oldBackpack then
+		inventory.Backpack = {}
+		return
 	end
 
-	-- Check if Hammer exists elsewhere in BuildHotbar
-	local hammerInBuildHotbar = nil
-	for slot = 2, HOTBAR_SIZE do
-		if inventory.BuildHotbar[slot] and inventory.BuildHotbar[slot].itemName == "Hammer" then
-			hammerInBuildHotbar = slot
-			break
+	-- Check if empty
+	if next(oldBackpack) == nil then
+		return
+	end
+
+	-- Check what kind of keys we have
+	local hasNumericKeys = false
+	local hasStringKeys = false
+	for key, _ in pairs(oldBackpack) do
+		if type(key) == "number" then
+			hasNumericKeys = true
+		elseif type(key) == "string" then
+			hasStringKeys = true
 		end
 	end
 
-	-- Check BreakHotbar
-	local hammerInBreakHotbar = nil
+	-- Already string-keyed — no migration needed
+	if hasStringKeys and not hasNumericKeys then
+		return
+	end
+
+	-- Has numeric keys — migrate to string keys
+	local newBackpack = {}
+	for i = 1, BACKPACK_SIZE do
+		if oldBackpack[i] then
+			newBackpack[bpKey(i)] = oldBackpack[i]
+		end
+	end
+	inventory.Backpack = newBackpack
+end
+
+-- Migrate old dual-hotbar format to unified hotbar
+local function migrateToUnifiedHotbar(inventory)
+	if not inventory.BreakHotbar then
+		return false
+	end
+
+	local items = {}
+
 	for slot = 1, HOTBAR_SIZE do
-		if inventory.BreakHotbar[slot] and inventory.BreakHotbar[slot].itemName == "Hammer" then
-			hammerInBreakHotbar = slot
-			break
+		local item = inventory.BreakHotbar[slot]
+		if item then
+			table.insert(items, item)
 		end
 	end
 
-	-- Check backpack
-	local hammerInBackpack = nil
-	for index, item in ipairs(inventory.Backpack) do
-		if item.itemName == "Hammer" then
-			hammerInBackpack = index
-			break
-		end
-	end
-
-	-- Create Hammer item
-	local hammerItem = {
-		id = "hammer_permanent",
-		itemName = "Hammer",
-		quantity = 1,
-	}
-
-	-- If Hammer exists elsewhere, remove it
-	if hammerInBuildHotbar then
-		inventory.BuildHotbar[hammerInBuildHotbar] = nil
-	elseif hammerInBreakHotbar then
-		inventory.BreakHotbar[hammerInBreakHotbar] = nil
-	elseif hammerInBackpack then
-		table.remove(inventory.Backpack, hammerInBackpack)
-	end
-
-	-- If slot 1 is occupied, move that item to first available slot
-	if inventory.BuildHotbar[1] then
-		local existingItem = inventory.BuildHotbar[1]
-
-		-- Try to find empty BuildHotbar slot
-		local movedToHotbar = false
-		for slot = 2, HOTBAR_SIZE do
-			if not inventory.BuildHotbar[slot] then
-				inventory.BuildHotbar[slot] = existingItem
-				movedToHotbar = true
-				break
-			end
-		end
-
-		-- If no empty hotbar slot, move to backpack
-		if not movedToHotbar then
-			table.insert(inventory.Backpack, existingItem)
-		end
-	end
-
-	-- Place Hammer in BuildHotbar slot 1
-	inventory.BuildHotbar[1] = hammerItem
-end
-
--- Ensure WoodenPickaxe is in Break hotbar slot 1 (starting tool)
-local function ensureWoodenPickaxeInBreakSlot1(inventory)
-	-- Check if WoodenPickaxe is already in BreakHotbar slot 1
-	if inventory.BreakHotbar[1] and inventory.BreakHotbar[1].itemName == "WoodenPickaxe" then
-		return -- Already there
-	end
-
-	-- Check if WoodenPickaxe exists elsewhere in BreakHotbar
-	local pickaxeInBreakHotbar = nil
 	for slot = 2, HOTBAR_SIZE do
-		if inventory.BreakHotbar[slot] and inventory.BreakHotbar[slot].itemName == "WoodenPickaxe" then
-			pickaxeInBreakHotbar = slot
-			break
+		local item = inventory.BuildHotbar[slot]
+		if item then
+			table.insert(items, item)
 		end
 	end
 
-	-- Check BuildHotbar
-	local pickaxeInBuildHotbar = nil
-	for slot = 1, HOTBAR_SIZE do
-		if inventory.BuildHotbar[slot] and inventory.BuildHotbar[slot].itemName == "WoodenPickaxe" then
-			pickaxeInBuildHotbar = slot
-			break
+	inventory.Hotbar = {}
+	for i = 1, math.min(#items, HOTBAR_SIZE) do
+		inventory.Hotbar[i] = items[i]
+	end
+
+	-- Overflow to Backpack
+	inventory.Backpack = {}
+	local backpackSlot = 1
+	for i = HOTBAR_SIZE + 1, #items do
+		if backpackSlot <= BACKPACK_SIZE then
+			bpSet(inventory.Backpack, backpackSlot, items[i])
+			backpackSlot = backpackSlot + 1
 		end
 	end
 
-	-- Check backpack
-	local pickaxeInBackpack = nil
-	for index, item in ipairs(inventory.Backpack) do
-		if item.itemName == "WoodenPickaxe" then
-			pickaxeInBackpack = index
-			break
-		end
-	end
+	inventory.BreakHotbar = nil
+	inventory.BuildHotbar = nil
+	inventory.CurrentMode = nil
 
-	-- If already exists somewhere, move it to BreakHotbar slot 1
-	local pickaxeItem = nil
-	if pickaxeInBreakHotbar then
-		pickaxeItem = inventory.BreakHotbar[pickaxeInBreakHotbar]
-		inventory.BreakHotbar[pickaxeInBreakHotbar] = nil
-	elseif pickaxeInBuildHotbar then
-		pickaxeItem = inventory.BuildHotbar[pickaxeInBuildHotbar]
-		inventory.BuildHotbar[pickaxeInBuildHotbar] = nil
-	elseif pickaxeInBackpack then
-		pickaxeItem = inventory.Backpack[pickaxeInBackpack]
-		table.remove(inventory.Backpack, pickaxeInBackpack)
-	else
-		-- Create new WoodenPickaxe item
-		pickaxeItem = {
-			id = "woodenpickaxe_starter",
-			itemName = "WoodenPickaxe",
-			quantity = 1,
-		}
-	end
-
-	-- If slot 1 is occupied, move that item to first available slot
-	if inventory.BreakHotbar[1] then
-		local existingItem = inventory.BreakHotbar[1]
-
-		-- Try to find empty BreakHotbar slot
-		local movedToHotbar = false
-		for slot = 2, HOTBAR_SIZE do
-			if not inventory.BreakHotbar[slot] then
-				inventory.BreakHotbar[slot] = existingItem
-				movedToHotbar = true
-				break
-			end
-		end
-
-		-- If no empty hotbar slot, move to backpack
-		if not movedToHotbar then
-			table.insert(inventory.Backpack, existingItem)
-		end
-	end
-
-	-- Place WoodenPickaxe in BreakHotbar slot 1
-	inventory.BreakHotbar[1] = pickaxeItem
+	return true
 end
 
--- Migrate old inventory format to new dual-hotbar format
-local function migrateInventory(inventory)
-	-- Check if already migrated (has BreakHotbar)
-	if inventory.BreakHotbar ~= nil then
-		return false -- Already using new format
-	end
-
-	-- Initialize new hotbars
-	inventory.BreakHotbar = {}
-	inventory.BuildHotbar = {}
-	inventory.CurrentMode = "Build"
-
-	-- Migrate items from old Hotbar to appropriate new hotbar
-	if inventory.Hotbar then
-		for slot = 1, 10 do
-			local item = inventory.Hotbar[slot]
-			if item then
-				local itemConfig = ItemData.GetItem(item.itemName)
-				local category = ItemCategorization.getItemCategory(itemConfig)
-
-				if category == "break" then
-					-- Find first empty Break slot
-					for newSlot = 1, HOTBAR_SIZE do
-						if not inventory.BreakHotbar[newSlot] then
-							inventory.BreakHotbar[newSlot] = item
-							break
-						end
-					end
-				elseif category == "build" then
-					-- Skip slot 1 for Build (reserved for Hammer) unless it's the Hammer
-					local startSlot = (item.itemName == "Hammer") and 1 or 2
-					for newSlot = startSlot, HOTBAR_SIZE do
-						if not inventory.BuildHotbar[newSlot] then
-							inventory.BuildHotbar[newSlot] = item
-							break
-						end
-					end
-				else
-					-- Move to backpack (ores and uncategorized)
-					table.insert(inventory.Backpack, item)
-				end
-			end
-		end
-
-		-- Remove old Hotbar
-		inventory.Hotbar = nil
-	end
-
-	return true -- Migration performed
-end
-
--- Clean up invalid items (items that no longer exist in ItemData)
 local function cleanupInvalidItems(inventory)
 	local removedCount = 0
 
-	-- Clean BreakHotbar
 	for slot = 1, HOTBAR_SIZE do
-		local item = inventory.BreakHotbar[slot]
+		local item = inventory.Hotbar[slot]
 		if item and not ItemData.GetItem(item.itemName) then
-			print("[InventoryService] Removing invalid item from BreakHotbar:", item.itemName)
-			inventory.BreakHotbar[slot] = nil
+			inventory.Hotbar[slot] = nil
 			removedCount = removedCount + 1
 		end
 	end
 
-	-- Clean BuildHotbar (skip slot 1 which is Hammer)
-	for slot = 2, HOTBAR_SIZE do
-		local item = inventory.BuildHotbar[slot]
+	for slot = 1, BACKPACK_SIZE do
+		local item = bpGet(inventory.Backpack, slot)
 		if item and not ItemData.GetItem(item.itemName) then
-			print("[InventoryService] Removing invalid item from BuildHotbar:", item.itemName)
-			inventory.BuildHotbar[slot] = nil
-			removedCount = removedCount + 1
-		end
-	end
-
-	-- Clean Backpack (iterate in reverse to safely remove)
-	for i = #inventory.Backpack, 1, -1 do
-		local item = inventory.Backpack[i]
-		if item and not ItemData.GetItem(item.itemName) then
-			print("[InventoryService] Removing invalid item from Backpack:", item.itemName)
-			table.remove(inventory.Backpack, i)
+			bpSet(inventory.Backpack, slot, nil)
 			removedCount = removedCount + 1
 		end
 	end
@@ -308,25 +169,66 @@ local function cleanupInvalidItems(inventory)
 	return removedCount
 end
 
--- Get inventory data for player
-local function getInventory(player: Player)
-	local playerData = DataService:GetData(player)
-	if not playerData then return nil end
-	return playerData.Inventory
-end
-
--- Find item in current mode's hotbar by ID
-local function findInCurrentHotbar(inventory, itemId: string): number?
-	local hotbar = getCurrentHotbar(inventory)
-	for slot = 1, HOTBAR_SIZE do
-		if hotbar[slot] and hotbar[slot].id == itemId then
+local function findFirstEmptyBackpackSlot(inventory): number?
+	for slot = 1, BACKPACK_SIZE do
+		if not bpGet(inventory.Backpack, slot) then
 			return slot
 		end
 	end
 	return nil
 end
 
--- Find item in a specific hotbar by ID
+local function ensureStarterPickaxe(inventory)
+	for slot = 1, HOTBAR_SIZE do
+		if inventory.Hotbar[slot] and inventory.Hotbar[slot].itemName == "WoodenPickaxe" then
+			return
+		end
+	end
+	for slot = 1, BACKPACK_SIZE do
+		if bpGet(inventory.Backpack, slot) and bpGet(inventory.Backpack, slot).itemName == "WoodenPickaxe" then
+			return
+		end
+	end
+
+	local pickaxeItem = {
+		id = "woodenpickaxe_starter",
+		itemName = "WoodenPickaxe",
+		quantity = 1,
+	}
+
+	for slot = 1, HOTBAR_SIZE do
+		if not inventory.Hotbar[slot] then
+			inventory.Hotbar[slot] = pickaxeItem
+			return
+		end
+	end
+
+	local emptySlot = findFirstEmptyBackpackSlot(inventory)
+	if emptySlot then
+		bpSet(inventory.Backpack, emptySlot, pickaxeItem)
+	end
+end
+
+local function removeHammerFromInventory(inventory)
+	for slot = 1, HOTBAR_SIZE do
+		if inventory.Hotbar[slot] and inventory.Hotbar[slot].itemName == "Hammer" then
+			inventory.Hotbar[slot] = nil
+		end
+	end
+
+	for slot = 1, BACKPACK_SIZE do
+		if bpGet(inventory.Backpack, slot) and bpGet(inventory.Backpack, slot).itemName == "Hammer" then
+			bpSet(inventory.Backpack, slot, nil)
+		end
+	end
+end
+
+local function getInventory(player: Player)
+	local playerData = DataService:GetData(player)
+	if not playerData then return nil end
+	return playerData.Inventory
+end
+
 local function findInHotbar(hotbar, itemId: string): number?
 	for slot = 1, HOTBAR_SIZE do
 		if hotbar[slot] and hotbar[slot].id == itemId then
@@ -336,46 +238,63 @@ local function findInHotbar(hotbar, itemId: string): number?
 	return nil
 end
 
--- Find item in backpack by ID
 local function findInBackpack(inventory, itemId: string): number?
-	for index, item in ipairs(inventory.Backpack) do
-		if item.id == itemId then
-			return index
+	for slot = 1, BACKPACK_SIZE do
+		local item = bpGet(inventory.Backpack, slot)
+		if item and item.id == itemId then
+			return slot
 		end
 	end
 	return nil
 end
 
 -- Serialize inventory for network transmission
--- Converts sparse Hotbar arrays into string-keyed format to prevent data loss
 local function serializeInventory(inventory)
-	-- Use string keys to avoid sparse array serialization issues
 	local serialized = {
-		BreakHotbar = {},
-		BuildHotbar = {},
-		Backpack = inventory.Backpack, -- Backpack is already an array
-		CurrentMode = inventory.CurrentMode,
+		Hotbar = {},
+		Backpack = {},
 		EquippedSlot = inventory.EquippedSlot,
 		NextItemId = inventory.NextItemId,
 	}
 
-	-- Use string keys like "1", "2", etc. instead of numeric indices
-	-- This prevents Roblox network layer from treating it as a sparse array
 	for i = 1, HOTBAR_SIZE do
-		serialized.BreakHotbar[tostring(i)] = inventory.BreakHotbar[i]
-		serialized.BuildHotbar[tostring(i)] = inventory.BuildHotbar[i]
+		serialized.Hotbar[tostring(i)] = inventory.Hotbar[i]
+	end
+
+	for i = 1, BACKPACK_SIZE do
+		serialized.Backpack[tostring(i)] = bpGet(inventory.Backpack, i)
 	end
 
 	return serialized
 end
 
--- Fire inventory update to client (with proper serialization)
 local function fireInventoryUpdate(self, player: Player, inventory)
 	local serialized = serializeInventory(inventory)
 	self.Client.InventoryUpdated:Fire(player, serialized)
 end
 
--- Create physical dropped item in world
+-- Check if player is inside their BuildingArea
+local function isPlayerInBuildingArea(player: Player): boolean
+	local character = player.Character
+	if not character or not character.PrimaryPart then
+		return false
+	end
+
+	local buildingZone = workspace:FindFirstChild("BuildingZone")
+	if not buildingZone then return false end
+
+	local buildingArea = buildingZone:FindFirstChild("BuildingArea")
+	if not buildingArea then return false end
+
+	local areaPosition = buildingArea.Position
+	local halfSize = buildingArea.Size / 2
+	local playerPosition = character.PrimaryPart.Position
+
+	return math.abs(playerPosition.X - areaPosition.X) <= halfSize.X
+		and math.abs(playerPosition.Y - areaPosition.Y) <= halfSize.Y
+		and math.abs(playerPosition.Z - areaPosition.Z) <= halfSize.Z
+end
+
 local function createDroppedItem(itemName: string, quantity: number, position: Vector3): Model?
 	local itemConfig = ItemData.GetItem(itemName)
 	if not itemConfig then
@@ -383,14 +302,12 @@ local function createDroppedItem(itemName: string, quantity: number, position: V
 		return nil
 	end
 
-	-- Navigate to item model
 	local assetsFolder = ReplicatedStorage:FindFirstChild("Assets")
 	if not assetsFolder then
 		warn("Assets folder not found")
 		return nil
 	end
 
-	-- Parse model path (e.g., "Items.Dirt" -> Assets/Items/Dirt)
 	local pathParts = string.split(itemConfig.modelPath, ".")
 	local current = assetsFolder
 	for _, part in ipairs(pathParts) do
@@ -406,24 +323,20 @@ local function createDroppedItem(itemName: string, quantity: number, position: V
 		return nil
 	end
 
-	-- Clone the model
 	local droppedModel = current:Clone()
 	droppedModel.Name = itemName .. "_Dropped"
 
-	-- Set position
 	if droppedModel.PrimaryPart then
 		droppedModel:SetPrimaryPartCFrame(CFrame.new(position))
 		droppedModel.PrimaryPart.Anchored = false
 		droppedModel.PrimaryPart.CanCollide = true
 	end
 
-	-- Add quantity value
 	local quantityValue = Instance.new("IntValue")
 	quantityValue.Name = "Quantity"
 	quantityValue.Value = quantity
 	quantityValue.Parent = droppedModel
 
-	-- Add item name value
 	local itemNameValue = Instance.new("StringValue")
 	itemNameValue.Name = "ItemName"
 	itemNameValue.Value = itemName
@@ -436,7 +349,6 @@ end
 
 --|| Public Functions ||--
 
--- Add item to inventory (routes to correct hotbar based on item category)
 function InventoryService:AddItem(player: Player, itemName: string, quantity: number): boolean
 	local inventory = getInventory(player)
 	if not inventory then return false end
@@ -448,25 +360,12 @@ function InventoryService:AddItem(player: Player, itemName: string, quantity: nu
 	end
 
 	local category = ItemCategorization.getItemCategory(itemConfig)
+	local targetHotbar = category == "hotbar" and inventory.Hotbar or nil
 
-	-- Determine target hotbar based on category
-	local targetHotbar
-	local startSlot = 1
-
-	if category == "break" then
-		targetHotbar = inventory.BreakHotbar
-	elseif category == "build" then
-		targetHotbar = inventory.BuildHotbar
-		startSlot = 2 -- Skip slot 1 (reserved for Hammer)
-	else
-		-- Backpack only (ores and uncategorized)
-		targetHotbar = nil
-	end
-
-	-- If stackable, try to find existing stack in appropriate hotbar
+	-- If stackable, try to find existing stack
 	if itemConfig.stackable then
 		if targetHotbar then
-			for slot = startSlot, HOTBAR_SIZE do
+			for slot = 1, HOTBAR_SIZE do
 				if targetHotbar[slot] and targetHotbar[slot].itemName == itemName then
 					targetHotbar[slot].quantity = targetHotbar[slot].quantity + quantity
 					fireInventoryUpdate(self, player, inventory)
@@ -475,9 +374,9 @@ function InventoryService:AddItem(player: Player, itemName: string, quantity: nu
 			end
 		end
 
-		-- Check backpack for existing stack
-		for _, item in ipairs(inventory.Backpack) do
-			if item.itemName == itemName then
+		for slot = 1, BACKPACK_SIZE do
+			local item = bpGet(inventory.Backpack, slot)
+			if item and item.itemName == itemName then
 				item.quantity = item.quantity + quantity
 				fireInventoryUpdate(self, player, inventory)
 				return true
@@ -485,16 +384,16 @@ function InventoryService:AddItem(player: Player, itemName: string, quantity: nu
 		end
 	end
 
-	-- No existing stack or not stackable - create new item
+	-- Create new item
 	local newItem: InventoryItem = {
 		id = generateItemId(player),
 		itemName = itemName,
 		quantity = quantity,
 	}
 
-	-- Try to add to target hotbar first (if applicable)
+	-- Try hotbar first
 	if targetHotbar then
-		for slot = startSlot, HOTBAR_SIZE do
+		for slot = 1, HOTBAR_SIZE do
 			if not targetHotbar[slot] then
 				targetHotbar[slot] = newItem
 				fireInventoryUpdate(self, player, inventory)
@@ -503,49 +402,33 @@ function InventoryService:AddItem(player: Player, itemName: string, quantity: nu
 		end
 	end
 
-	-- Target hotbar full or backpack-only item, add to backpack
-	table.insert(inventory.Backpack, newItem)
-	fireInventoryUpdate(self, player, inventory)
-	return true
-end
-
--- Add a blueprint item to inventory (legacy method - now uses standard AddItem)
--- blueprintType should be the blueprint name like "Workbench" or "Furnace"
-function InventoryService:AddBlueprintItem(player: Player, blueprintType: string): boolean
-	-- Construct the item name from the blueprint type
-	-- e.g., "Workbench" -> "WorkbenchBlueprint"
-	local itemName = blueprintType .. "Blueprint"
-	return self:AddItem(player, itemName, 1)
-end
-
--- Remove item from inventory by ID
-function InventoryService:RemoveItem(player: Player, itemId: string, quantity: number): boolean
-	local inventory = getInventory(player)
-	if not inventory then return false end
-
-	-- Check current mode's hotbar
-	local currentHotbar = getCurrentHotbar(inventory)
-	local hotbarSlot = findInHotbar(currentHotbar, itemId)
-	if hotbarSlot then
-		local item = currentHotbar[hotbarSlot]
-		if item.quantity <= quantity then
-			-- Remove entire stack
-			currentHotbar[hotbarSlot] = nil
-		else
-			-- Reduce quantity
-			item.quantity = item.quantity - quantity
-		end
+	-- Hotbar full or backpack-only item
+	local emptySlot = findFirstEmptyBackpackSlot(inventory)
+	if emptySlot then
+		bpSet(inventory.Backpack, emptySlot, newItem)
 		fireInventoryUpdate(self, player, inventory)
 		return true
 	end
 
-	-- Check other hotbar
-	local otherHotbar = inventory.CurrentMode == "Break" and inventory.BuildHotbar or inventory.BreakHotbar
-	hotbarSlot = findInHotbar(otherHotbar, itemId)
+	warn("Inventory full, cannot add item:", itemName)
+	return false
+end
+
+function InventoryService:AddBlueprintItem(player: Player, blueprintType: string): boolean
+	local itemName = blueprintType .. "Blueprint"
+	return self:AddItem(player, itemName, 1)
+end
+
+function InventoryService:RemoveItem(player: Player, itemId: string, quantity: number): boolean
+	local inventory = getInventory(player)
+	if not inventory then return false end
+
+	-- Check hotbar
+	local hotbarSlot = findInHotbar(inventory.Hotbar, itemId)
 	if hotbarSlot then
-		local item = otherHotbar[hotbarSlot]
+		local item = inventory.Hotbar[hotbarSlot]
 		if item.quantity <= quantity then
-			otherHotbar[hotbarSlot] = nil
+			inventory.Hotbar[hotbarSlot] = nil
 		else
 			item.quantity = item.quantity - quantity
 		end
@@ -554,14 +437,12 @@ function InventoryService:RemoveItem(player: Player, itemId: string, quantity: n
 	end
 
 	-- Check backpack
-	local backpackIndex = findInBackpack(inventory, itemId)
-	if backpackIndex then
-		local item = inventory.Backpack[backpackIndex]
+	local backpackSlot = findInBackpack(inventory, itemId)
+	if backpackSlot then
+		local item = bpGet(inventory.Backpack, backpackSlot)
 		if item.quantity <= quantity then
-			-- Remove entire stack
-			table.remove(inventory.Backpack, backpackIndex)
+			bpSet(inventory.Backpack, backpackSlot, nil)
 		else
-			-- Reduce quantity
 			item.quantity = item.quantity - quantity
 		end
 		fireInventoryUpdate(self, player, inventory)
@@ -572,7 +453,6 @@ function InventoryService:RemoveItem(player: Player, itemId: string, quantity: n
 	return false
 end
 
--- Move item from backpack to current mode's hotbar
 function InventoryService:MoveToHotbar(player: Player, itemId: string, targetSlot: number): boolean
 	local inventory = getInventory(player)
 	if not inventory then return false end
@@ -582,46 +462,27 @@ function InventoryService:MoveToHotbar(player: Player, itemId: string, targetSlo
 		return false
 	end
 
-	-- Prevent moving to Build slot 1 (reserved for Hammer)
-	if inventory.CurrentMode == "Build" and targetSlot == 1 then
-		warn("Cannot move item to Build slot 1 (reserved for Hammer)")
-		return false
-	end
-
-	-- Find item in backpack
-	local backpackIndex = findInBackpack(inventory, itemId)
-	if not backpackIndex then
+	local backpackSlot = findInBackpack(inventory, itemId)
+	if not backpackSlot then
 		warn("Item not found in backpack:", itemId)
 		return false
 	end
 
-	local item = inventory.Backpack[backpackIndex]
+	local item = bpGet(inventory.Backpack, backpackSlot)
 
-	-- Validate item can be placed in current mode
-	local itemConfig = ItemData.GetItem(item.itemName)
-	if not ItemCategorization.canPlaceInMode(itemConfig, inventory.CurrentMode) then
-		warn("Item cannot be placed in current mode:", item.itemName, inventory.CurrentMode)
-		return false
-	end
-
-	local currentHotbar = getCurrentHotbar(inventory)
-
-	-- If target slot occupied, swap
-	if currentHotbar[targetSlot] then
-		local swapItem = currentHotbar[targetSlot]
-		currentHotbar[targetSlot] = item
-		inventory.Backpack[backpackIndex] = swapItem
+	if inventory.Hotbar[targetSlot] then
+		local swapItem = inventory.Hotbar[targetSlot]
+		inventory.Hotbar[targetSlot] = item
+		bpSet(inventory.Backpack, backpackSlot, swapItem)
 	else
-		-- Move to empty slot
-		currentHotbar[targetSlot] = item
-		table.remove(inventory.Backpack, backpackIndex)
+		inventory.Hotbar[targetSlot] = item
+		bpSet(inventory.Backpack, backpackSlot, nil)
 	end
 
 	fireInventoryUpdate(self, player, inventory)
 	return true
 end
 
--- Move item from current mode's hotbar to backpack
 function InventoryService:MoveToBackpack(player: Player, slot: number): boolean
 	local inventory = getInventory(player)
 	if not inventory then return false end
@@ -631,106 +492,66 @@ function InventoryService:MoveToBackpack(player: Player, slot: number): boolean
 		return false
 	end
 
-	-- Prevent moving Hammer from Build slot 1
-	if inventory.CurrentMode == "Build" and slot == 1 then
-		warn("Cannot move Hammer from Build slot 1")
-		return false
-	end
-
-	local currentHotbar = getCurrentHotbar(inventory)
-	local item = currentHotbar[slot]
+	local item = inventory.Hotbar[slot]
 	if not item then
 		warn("No item in hotbar slot:", slot)
 		return false
 	end
 
-	-- Unequip if this slot is equipped
 	if inventory.EquippedSlot == slot then
 		self:UnequipItem(player)
 	end
 
-	-- Move to backpack
-	table.insert(inventory.Backpack, item)
-	currentHotbar[slot] = nil
+	local emptySlot = findFirstEmptyBackpackSlot(inventory)
+	if not emptySlot then
+		warn("Backpack full, cannot move item")
+		return false
+	end
+
+	bpSet(inventory.Backpack, emptySlot, item)
+	inventory.Hotbar[slot] = nil
 
 	fireInventoryUpdate(self, player, inventory)
 	return true
 end
 
--- Swap two items in inventory
 function InventoryService:SwapItems(player: Player, itemId1: string, itemId2: string): boolean
 	local inventory = getInventory(player)
 	if not inventory then return false end
 
-	local currentHotbar = getCurrentHotbar(inventory)
-
-	-- Find both items
-	local slot1 = findInHotbar(currentHotbar, itemId1)
-	local slot2 = findInHotbar(currentHotbar, itemId2)
+	local slot1 = findInHotbar(inventory.Hotbar, itemId1)
+	local slot2 = findInHotbar(inventory.Hotbar, itemId2)
 	local backpack1 = findInBackpack(inventory, itemId1)
 	local backpack2 = findInBackpack(inventory, itemId2)
 
-	-- Hotbar to Hotbar swap (within current mode)
 	if slot1 and slot2 then
-		-- Prevent swapping involving Build slot 1
-		if inventory.CurrentMode == "Build" and (slot1 == 1 or slot2 == 1) then
-			warn("Cannot swap items involving Build slot 1 (Hammer)")
-			return false
-		end
-		local temp = currentHotbar[slot1]
-		currentHotbar[slot1] = currentHotbar[slot2]
-		currentHotbar[slot2] = temp
+		local temp = inventory.Hotbar[slot1]
+		inventory.Hotbar[slot1] = inventory.Hotbar[slot2]
+		inventory.Hotbar[slot2] = temp
 		fireInventoryUpdate(self, player, inventory)
 		return true
 	end
 
-	-- Backpack to Backpack swap
 	if backpack1 and backpack2 then
-		local temp = inventory.Backpack[backpack1]
-		inventory.Backpack[backpack1] = inventory.Backpack[backpack2]
-		inventory.Backpack[backpack2] = temp
+		local temp = bpGet(inventory.Backpack, backpack1)
+		bpSet(inventory.Backpack, backpack1, bpGet(inventory.Backpack, backpack2))
+		bpSet(inventory.Backpack, backpack2, temp)
 		fireInventoryUpdate(self, player, inventory)
 		return true
 	end
 
-	-- Hotbar to Backpack swap
 	if slot1 and backpack2 then
-		-- Prevent swap involving Build slot 1
-		if inventory.CurrentMode == "Build" and slot1 == 1 then
-			warn("Cannot swap items involving Build slot 1 (Hammer)")
-			return false
-		end
-		-- Validate backpack item can go into current mode
-		local backpackItem = inventory.Backpack[backpack2]
-		local itemConfig = ItemData.GetItem(backpackItem.itemName)
-		if not ItemCategorization.canPlaceInMode(itemConfig, inventory.CurrentMode) then
-			warn("Backpack item cannot be placed in current mode")
-			return false
-		end
-		local temp = currentHotbar[slot1]
-		currentHotbar[slot1] = inventory.Backpack[backpack2]
-		inventory.Backpack[backpack2] = temp
+		local temp = inventory.Hotbar[slot1]
+		inventory.Hotbar[slot1] = bpGet(inventory.Backpack, backpack2)
+		bpSet(inventory.Backpack, backpack2, temp)
 		fireInventoryUpdate(self, player, inventory)
 		return true
 	end
 
-	-- Backpack to Hotbar swap
 	if backpack1 and slot2 then
-		-- Prevent swap involving Build slot 1
-		if inventory.CurrentMode == "Build" and slot2 == 1 then
-			warn("Cannot swap items involving Build slot 1 (Hammer)")
-			return false
-		end
-		-- Validate backpack item can go into current mode
-		local backpackItem = inventory.Backpack[backpack1]
-		local itemConfig = ItemData.GetItem(backpackItem.itemName)
-		if not ItemCategorization.canPlaceInMode(itemConfig, inventory.CurrentMode) then
-			warn("Backpack item cannot be placed in current mode")
-			return false
-		end
-		local temp = inventory.Backpack[backpack1]
-		inventory.Backpack[backpack1] = currentHotbar[slot2]
-		currentHotbar[slot2] = temp
+		local temp = bpGet(inventory.Backpack, backpack1)
+		bpSet(inventory.Backpack, backpack1, inventory.Hotbar[slot2])
+		inventory.Hotbar[slot2] = temp
 		fireInventoryUpdate(self, player, inventory)
 		return true
 	end
@@ -739,13 +560,9 @@ function InventoryService:SwapItems(player: Player, itemId1: string, itemId2: st
 	return false
 end
 
--- Move item from one hotbar slot to another (within current mode)
 function InventoryService:MoveHotbarSlot(player: Player, fromSlot: number, toSlot: number): boolean
 	local inventory = getInventory(player)
-	if not inventory then
-		warn("MoveHotbarSlot: No inventory found")
-		return false
-	end
+	if not inventory then return false end
 
 	if fromSlot < 1 or fromSlot > HOTBAR_SIZE or toSlot < 1 or toSlot > HOTBAR_SIZE then
 		warn("Invalid hotbar slot:", fromSlot, toSlot)
@@ -753,29 +570,16 @@ function InventoryService:MoveHotbarSlot(player: Player, fromSlot: number, toSlo
 	end
 
 	if fromSlot == toSlot then
-		return true -- No-op
+		return true
 	end
 
-	-- Prevent moving from/to Build slot 1 (Hammer is locked)
-	if inventory.CurrentMode == "Build" then
-		if fromSlot == 1 or toSlot == 1 then
-			warn("Cannot move items to/from Build slot 1 (Hammer slot)")
-			return false
-		end
-	end
-
-	local currentHotbar = getCurrentHotbar(inventory)
-	local fromItem = currentHotbar[fromSlot]
+	local fromItem = inventory.Hotbar[fromSlot]
 	if not fromItem then
 		warn("No item in source slot:", fromSlot)
 		return false
 	end
 
-	local toItem = currentHotbar[toSlot]
-
-	-- Unequip if moving from or to equipped slot
 	if inventory.EquippedSlot == fromSlot or inventory.EquippedSlot == toSlot then
-		-- Destroy equipped model and weld
 		if equippedModels[player] then
 			equippedModels[player]:Destroy()
 			equippedModels[player] = nil
@@ -784,42 +588,97 @@ function InventoryService:MoveHotbarSlot(player: Player, fromSlot: number, toSlo
 			equippedWelds[player]:Destroy()
 			equippedWelds[player] = nil
 		end
-
 		inventory.EquippedSlot = nil
 	end
 
-	-- Move or swap items
+	local toItem = inventory.Hotbar[toSlot]
 	if toItem then
-		-- Swap: put fromItem in toSlot, put toItem in fromSlot
-		currentHotbar[toSlot] = fromItem
-		currentHotbar[fromSlot] = toItem
+		inventory.Hotbar[toSlot] = fromItem
+		inventory.Hotbar[fromSlot] = toItem
 	else
-		-- Move: put fromItem in toSlot, clear fromSlot
-		currentHotbar[toSlot] = fromItem
-		currentHotbar[fromSlot] = nil
+		inventory.Hotbar[toSlot] = fromItem
+		inventory.Hotbar[fromSlot] = nil
 	end
 
 	fireInventoryUpdate(self, player, inventory)
 	return true
 end
 
--- Equip item from current mode's hotbar slot
 function InventoryService:EquipItem(player: Player, slot: number): boolean
 	local inventory = getInventory(player)
 	if not inventory then return false end
 
+	-- Hammer slot (contextual)
+	if slot == 0 then
+		if not isPlayerInBuildingArea(player) then
+			warn("Cannot equip Hammer outside BuildingArea")
+			return false
+		end
+
+		if inventory.EquippedSlot then
+			self:UnequipItem(player)
+		end
+
+		local itemConfig = ItemData.GetItem("Hammer")
+		if not itemConfig then return false end
+
+		local character = player.Character
+		if not character then return false end
+
+		local rightHand = character:FindFirstChild("RightHand")
+		if not rightHand then return false end
+
+		local rightGripAttachment = rightHand:FindFirstChild("RightGripAttachment")
+		if not rightGripAttachment then return false end
+
+		local pathParts = string.split(itemConfig.modelPath, ".")
+		local current = ReplicatedStorage
+		local startIndex = pathParts[1] == "ReplicatedStorage" and 2 or 1
+		for i = startIndex, #pathParts do
+			current = current:FindFirstChild(pathParts[i])
+			if not current then return false end
+		end
+
+		if not current:IsA("Model") then return false end
+
+		local itemModel = current:Clone()
+		itemModel.Name = "Hammer_Equipped"
+		if not itemModel.PrimaryPart then
+			itemModel:Destroy()
+			return false
+		end
+
+		itemModel.PrimaryPart.Anchored = false
+		itemModel:SetPrimaryPartCFrame(rightGripAttachment.WorldCFrame)
+
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = rightHand
+		weld.Part1 = itemModel.PrimaryPart
+		weld.Parent = itemModel.PrimaryPart
+
+		itemModel.Parent = character
+
+		inventory.EquippedSlot = 0
+		equippedModels[player] = itemModel
+		equippedWelds[player] = weld
+
+		fireInventoryUpdate(self, player, inventory)
+		self.Client.ItemEquipped:Fire(player, 0, "Hammer")
+
+		return true
+	end
+
+	-- Regular slots (1-7)
 	if slot < 1 or slot > HOTBAR_SIZE then
 		warn("Invalid hotbar slot:", slot)
 		return false
 	end
 
-	-- Unequip current item if any
 	if inventory.EquippedSlot then
 		self:UnequipItem(player)
 	end
 
-	local currentHotbar = getCurrentHotbar(inventory)
-	local item = currentHotbar[slot]
+	local item = inventory.Hotbar[slot]
 	if not item then
 		warn("No item in slot:", slot)
 		return false
@@ -831,38 +690,18 @@ function InventoryService:EquipItem(player: Player, slot: number): boolean
 		return false
 	end
 
-	-- Get player character
 	local character = player.Character
-	if not character then
-		warn("Player has no character")
-		return false
-	end
+	if not character then return false end
 
 	local rightHand = character:FindFirstChild("RightHand")
-	if not rightHand then
-		warn("RightHand not found")
-		return false
-	end
+	if not rightHand then return false end
 
 	local rightGripAttachment = rightHand:FindFirstChild("RightGripAttachment")
-	if not rightGripAttachment then
-		warn("RightGripAttachment not found")
-		return false
-	end
+	if not rightGripAttachment then return false end
 
-	-- Parse model path (e.g., "ReplicatedStorage.Assets.Items.Dirt")
 	local pathParts = string.split(itemConfig.modelPath, ".")
-
-	-- Start from ReplicatedStorage
 	local current = ReplicatedStorage
-
-	-- Skip first part if it's "ReplicatedStorage" since we already have it
-	local startIndex = 1
-	if pathParts[1] == "ReplicatedStorage" then
-		startIndex = 2
-	end
-
-	-- Traverse the path
+	local startIndex = pathParts[1] == "ReplicatedStorage" and 2 or 1
 	for i = startIndex, #pathParts do
 		current = current:FindFirstChild(pathParts[i])
 		if not current then
@@ -876,7 +715,6 @@ function InventoryService:EquipItem(player: Player, slot: number): boolean
 		return false
 	end
 
-	-- Clone and position model
 	local itemModel = current:Clone()
 	itemModel.Name = item.itemName .. "_Equipped"
 
@@ -886,13 +724,9 @@ function InventoryService:EquipItem(player: Player, slot: number): boolean
 		return false
 	end
 
-	-- Unanchor for welding
 	itemModel.PrimaryPart.Anchored = false
-
-	-- Position at grip attachment
 	itemModel:SetPrimaryPartCFrame(rightGripAttachment.WorldCFrame)
 
-	-- Create weld
 	local weld = Instance.new("WeldConstraint")
 	weld.Part0 = rightHand
 	weld.Part1 = itemModel.PrimaryPart
@@ -900,26 +734,22 @@ function InventoryService:EquipItem(player: Player, slot: number): boolean
 
 	itemModel.Parent = character
 
-	-- Store equipped state
 	inventory.EquippedSlot = slot
 	equippedModels[player] = itemModel
 	equippedWelds[player] = weld
 
-	-- Notify client
 	fireInventoryUpdate(self, player, inventory)
 	self.Client.ItemEquipped:Fire(player, slot, item.itemName)
 
 	return true
 end
 
--- Unequip current item
 function InventoryService:UnequipItem(player: Player): boolean
 	local inventory = getInventory(player)
-	if not inventory or not inventory.EquippedSlot then
+	if not inventory or inventory.EquippedSlot == nil then
 		return false
 	end
 
-	-- Destroy equipped model and weld
 	if equippedModels[player] then
 		equippedModels[player]:Destroy()
 		equippedModels[player] = nil
@@ -932,57 +762,27 @@ function InventoryService:UnequipItem(player: Player): boolean
 
 	inventory.EquippedSlot = nil
 
-	-- Notify client
 	fireInventoryUpdate(self, player, inventory)
 	self.Client.ItemUnequipped:Fire(player)
 
 	return true
 end
 
--- Switch between Break and Build modes
-function InventoryService:SwitchMode(player: Player): boolean
-	local inventory = getInventory(player)
-	if not inventory then return false end
-
-	-- 1. Unequip current item
-	if inventory.EquippedSlot then
-		self:UnequipItem(player)
-	end
-
-	-- 2. Toggle mode
-	local newMode = inventory.CurrentMode == "Break" and "Build" or "Break"
-	inventory.CurrentMode = newMode
-
-	-- 3. Auto-equip slot 1 of new mode (if item exists there)
-	local newHotbar = getHotbarForMode(inventory, newMode)
-	if newHotbar[1] then
-		self:EquipItem(player, 1)
-	end
-
-	-- 4. Notify client
-	fireInventoryUpdate(self, player, inventory)
-	self.Client.ModeChanged:Fire(player, newMode)
-
-	return true
-end
-
--- Get current mode
-function InventoryService:GetCurrentMode(player: Player): string?
-	local inventory = getInventory(player)
-	return inventory and inventory.CurrentMode or nil
-end
-
--- Drop equipped item (called when player presses G)
 function InventoryService:DropEquippedItem(player: Player): boolean
 	local inventory = getInventory(player)
-	if not inventory or not inventory.EquippedSlot then
+	if not inventory or inventory.EquippedSlot == nil then
 		warn("No item equipped to drop")
 		return false
 	end
 
 	local slot = inventory.EquippedSlot
-	local currentHotbar = getCurrentHotbar(inventory)
-	local item = currentHotbar[slot]
+
+	if slot == 0 then
+		warn("Cannot drop Hammer")
+		return false
+	end
+
+	local item = inventory.Hotbar[slot]
 	if not item then return false end
 
 	local itemConfig = ItemData.GetItem(item.itemName)
@@ -991,13 +791,6 @@ function InventoryService:DropEquippedItem(player: Player): boolean
 		return false
 	end
 
-	-- Prevent dropping Hammer from Build mode slot 1
-	if inventory.CurrentMode == "Build" and slot == 1 then
-		warn("Cannot drop Hammer")
-		return false
-	end
-
-	-- Get drop position (in front of player)
 	local character = player.Character
 	if not character or not character.PrimaryPart then
 		warn("Cannot get player position")
@@ -1007,23 +800,80 @@ function InventoryService:DropEquippedItem(player: Player): boolean
 	local lookVector = character.PrimaryPart.CFrame.LookVector
 	local dropPosition = character.PrimaryPart.Position + (lookVector * DROP_DISTANCE)
 
-	-- Unequip first
 	self:UnequipItem(player)
 
-	-- Create dropped item in world
 	createDroppedItem(item.itemName, item.quantity, dropPosition)
 
-	-- Remove from inventory
-	currentHotbar[slot] = nil
+	inventory.Hotbar[slot] = nil
 
-	-- Notify client
 	self.Client.ItemDropped:Fire(player, item.itemName, item.quantity)
 	fireInventoryUpdate(self, player, inventory)
 
 	return true
 end
 
--- Get player's inventory
+-- Swap two slots in the inventory grid (1-21 = backpack slots, 22-28 = hotbar slots 1-7)
+function InventoryService:SwapGridSlots(player: Player, fromGridIndex: number, toGridIndex: number): boolean
+	local inventory = getInventory(player)
+	if not inventory then return false end
+
+	if fromGridIndex < 1 or fromGridIndex > 28 or toGridIndex < 1 or toGridIndex > 28 then
+		warn("Invalid grid index:", fromGridIndex, toGridIndex)
+		return false
+	end
+
+	if fromGridIndex == toGridIndex then return true end
+
+	local function getSlotRef(gridIndex)
+		if gridIndex <= BACKPACK_SIZE then
+			return "backpack", gridIndex
+		else
+			return "hotbar", gridIndex - BACKPACK_SIZE
+		end
+	end
+
+	local fromType, fromIdx = getSlotRef(fromGridIndex)
+	local toType, toIdx = getSlotRef(toGridIndex)
+
+	local fromItem, toItem
+
+	if fromType == "backpack" then
+		fromItem = bpGet(inventory.Backpack, fromIdx)
+	else
+		fromItem = inventory.Hotbar[fromIdx]
+	end
+
+	if toType == "backpack" then
+		toItem = bpGet(inventory.Backpack, toIdx)
+	else
+		toItem = inventory.Hotbar[toIdx]
+	end
+
+	-- Unequip if moving from/to an equipped hotbar slot
+	if fromType == "hotbar" and inventory.EquippedSlot == fromIdx then
+		self:UnequipItem(player)
+	end
+	if toType == "hotbar" and inventory.EquippedSlot == toIdx then
+		self:UnequipItem(player)
+	end
+
+	-- Perform swap
+	if fromType == "backpack" then
+		bpSet(inventory.Backpack, fromIdx, toItem)
+	else
+		inventory.Hotbar[fromIdx] = toItem
+	end
+
+	if toType == "backpack" then
+		bpSet(inventory.Backpack, toIdx, fromItem)
+	else
+		inventory.Hotbar[toIdx] = fromItem
+	end
+
+	fireInventoryUpdate(self, player, inventory)
+	return true
+end
+
 function InventoryService:GetInventory(player: Player)
 	return getInventory(player)
 end
@@ -1064,12 +914,8 @@ function InventoryService.Client:DropEquippedItem(player: Player)
 	return self.Server:DropEquippedItem(player)
 end
 
-function InventoryService.Client:SwitchMode(player: Player)
-	return self.Server:SwitchMode(player)
-end
-
-function InventoryService.Client:GetCurrentMode(player: Player)
-	return self.Server:GetCurrentMode(player)
+function InventoryService.Client:SwapGridSlots(player: Player, fromGridIndex: number, toGridIndex: number)
+	return self.Server:SwapGridSlots(player, fromGridIndex, toGridIndex)
 end
 
 function InventoryService.Client:AddItem(player: Player, itemName: string, quantity: number)
@@ -1080,62 +926,56 @@ end
 function InventoryService:KnitStart()
 	DataService = Knit.GetService("DataService")
 
-	-- Send initial inventory when player joins
+	local function initializeInventory(player)
+		local inventory = getInventory(player)
+		if not inventory then return end
+
+		-- Migrate old dual-hotbar format
+		local migrated = migrateToUnifiedHotbar(inventory)
+		if migrated then
+			print("[InventoryService] Migrated inventory to unified hotbar for", player.Name)
+		end
+
+		-- Initialize Hotbar if nil (new player)
+		if not inventory.Hotbar then
+			inventory.Hotbar = {}
+		end
+
+		-- Initialize Backpack if nil
+		if not inventory.Backpack then
+			inventory.Backpack = {}
+		end
+
+		-- Migrate numeric-keyed backpack to string-keyed
+		migrateBackpack(inventory)
+
+		-- Remove any leftover Hammer from inventory data
+		removeHammerFromInventory(inventory)
+
+		-- Clean up invalid items
+		local removedCount = cleanupInvalidItems(inventory)
+		if removedCount > 0 then
+			print("[InventoryService] Cleaned up", removedCount, "invalid items for", player.Name)
+		end
+
+		-- Ensure starter tool
+		ensureStarterPickaxe(inventory)
+
+		-- Always start unequipped
+		inventory.EquippedSlot = nil
+
+		fireInventoryUpdate(self, player, inventory)
+	end
+
 	local function playerAdded(player)
-		-- Wait for character and data to load
 		player.CharacterAdded:Connect(function()
-			task.wait(0.5) -- Small delay to ensure data is loaded
-			local inventory = getInventory(player)
-			if inventory then
-				-- Migrate old format if needed
-				local migrated = migrateInventory(inventory)
-				if migrated then
-					print("[InventoryService] Migrated inventory for", player.Name)
-				end
-
-				-- Clean up invalid items (items removed from ItemData)
-				local removedCount = cleanupInvalidItems(inventory)
-				if removedCount > 0 then
-					print("[InventoryService] Cleaned up", removedCount, "invalid items for", player.Name)
-				end
-
-				-- Ensure starter tools
-				ensureHammerInBuildSlot1(inventory)
-				ensureWoodenPickaxeInBreakSlot1(inventory)
-
-				-- Never load equipped state - always start unequipped
-				inventory.EquippedSlot = nil
-
-				fireInventoryUpdate(self, player, inventory)
-			end
+			task.wait(0.5)
+			initializeInventory(player)
 		end)
 
-		-- Also send if character already exists
 		if player.Character then
 			task.wait(0.5)
-			local inventory = getInventory(player)
-			if inventory then
-				-- Migrate old format if needed
-				local migrated = migrateInventory(inventory)
-				if migrated then
-					print("[InventoryService] Migrated inventory for", player.Name)
-				end
-
-				-- Clean up invalid items (items removed from ItemData)
-				local removedCount = cleanupInvalidItems(inventory)
-				if removedCount > 0 then
-					print("[InventoryService] Cleaned up", removedCount, "invalid items for", player.Name)
-				end
-
-				-- Ensure starter tools
-				ensureHammerInBuildSlot1(inventory)
-				ensureWoodenPickaxeInBreakSlot1(inventory)
-
-				-- Never load equipped state - always start unequipped
-				inventory.EquippedSlot = nil
-
-				fireInventoryUpdate(self, player, inventory)
-			end
+			initializeInventory(player)
 		end
 	end
 
@@ -1144,7 +984,6 @@ function InventoryService:KnitStart()
 		playerAdded(player)
 	end
 
-	-- Listen for player leaving to cleanup
 	Players.PlayerRemoving:Connect(function(player)
 		equippedModels[player] = nil
 		equippedWelds[player] = nil

@@ -1,119 +1,123 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Rodux = require(ReplicatedStorage.Packages.Rodux)
 
-local HOTBAR_SIZE = 7 -- Per mode
+local HOTBAR_SIZE = 7
+local BACKPACK_SIZE = 21
 
--- Default state
 local defaultState = {
-	BreakHotbar = {}, -- { [1] = { id, itemName, quantity }, [2] = nil, ... }
-	BuildHotbar = {}, -- { [1] = Hammer, [2] = nil, ... }
-	Backpack = {}, -- { { id, itemName, quantity }, ... }
-	CurrentMode = "Build", -- "Break" or "Build"
-	EquippedSlot = nil, -- 1-6, relative to current mode
+	Hotbar = {},
+	Backpack = {},
+	EquippedSlot = nil,
+	HammerAvailable = false,
 	BackpackOpen = false,
-	SearchQuery = "",
 }
 
--- Initialize empty hotbar slots
 for i = 1, HOTBAR_SIZE do
-	defaultState.BreakHotbar[i] = nil
-	defaultState.BuildHotbar[i] = nil
+	defaultState.Hotbar[i] = nil
 end
 
 local InventoryReducer = Rodux.createReducer(defaultState, {
 	setInventory = function(state, action)
 		return {
-			BreakHotbar = action.inventory.BreakHotbar or state.BreakHotbar,
-			BuildHotbar = action.inventory.BuildHotbar or state.BuildHotbar,
+			Hotbar = action.inventory.Hotbar or state.Hotbar,
 			Backpack = action.inventory.Backpack or state.Backpack,
-			CurrentMode = action.inventory.CurrentMode or state.CurrentMode,
 			EquippedSlot = action.inventory.EquippedSlot,
+			HammerAvailable = state.HammerAvailable,
 			BackpackOpen = state.BackpackOpen,
-			SearchQuery = state.SearchQuery,
 		}
 	end,
 
-	setBreakHotbar = function(state, action)
+	setHotbar = function(state, action)
 		return {
-			BreakHotbar = action.hotbar,
-			BuildHotbar = state.BuildHotbar,
+			Hotbar = action.hotbar,
 			Backpack = state.Backpack,
-			CurrentMode = state.CurrentMode,
 			EquippedSlot = state.EquippedSlot,
+			HammerAvailable = state.HammerAvailable,
 			BackpackOpen = state.BackpackOpen,
-			SearchQuery = state.SearchQuery,
 		}
 	end,
 
-	setBuildHotbar = function(state, action)
+	setHammerAvailable = function(state, action)
 		return {
-			BreakHotbar = state.BreakHotbar,
-			BuildHotbar = action.hotbar,
+			Hotbar = state.Hotbar,
 			Backpack = state.Backpack,
-			CurrentMode = state.CurrentMode,
 			EquippedSlot = state.EquippedSlot,
+			HammerAvailable = action.available,
 			BackpackOpen = state.BackpackOpen,
-			SearchQuery = state.SearchQuery,
-		}
-	end,
-
-	setCurrentMode = function(state, action)
-		return {
-			BreakHotbar = state.BreakHotbar,
-			BuildHotbar = state.BuildHotbar,
-			Backpack = state.Backpack,
-			CurrentMode = action.mode,
-			EquippedSlot = state.EquippedSlot,
-			BackpackOpen = state.BackpackOpen,
-			SearchQuery = state.SearchQuery,
 		}
 	end,
 
 	setBackpack = function(state, action)
 		return {
-			BreakHotbar = state.BreakHotbar,
-			BuildHotbar = state.BuildHotbar,
+			Hotbar = state.Hotbar,
 			Backpack = action.backpack,
-			CurrentMode = state.CurrentMode,
 			EquippedSlot = state.EquippedSlot,
+			HammerAvailable = state.HammerAvailable,
 			BackpackOpen = state.BackpackOpen,
-			SearchQuery = state.SearchQuery,
 		}
 	end,
 
 	setEquippedSlot = function(state, action)
 		return {
-			BreakHotbar = state.BreakHotbar,
-			BuildHotbar = state.BuildHotbar,
+			Hotbar = state.Hotbar,
 			Backpack = state.Backpack,
-			CurrentMode = state.CurrentMode,
 			EquippedSlot = action.slot,
+			HammerAvailable = state.HammerAvailable,
 			BackpackOpen = state.BackpackOpen,
-			SearchQuery = state.SearchQuery,
 		}
 	end,
 
 	setBackpackOpen = function(state, action)
 		return {
-			BreakHotbar = state.BreakHotbar,
-			BuildHotbar = state.BuildHotbar,
+			Hotbar = state.Hotbar,
 			Backpack = state.Backpack,
-			CurrentMode = state.CurrentMode,
 			EquippedSlot = state.EquippedSlot,
+			HammerAvailable = state.HammerAvailable,
 			BackpackOpen = action.isOpen,
-			SearchQuery = state.SearchQuery,
 		}
 	end,
 
-	setSearchQuery = function(state, action)
+	swapGridSlots = function(state, action)
+		local fromGridIndex = action.fromGridIndex
+		local toGridIndex = action.toGridIndex
+
+		local newHotbar = {}
+		for i = 1, HOTBAR_SIZE do
+			newHotbar[i] = state.Hotbar[i]
+		end
+
+		local newBackpack = {}
+		for i = 1, BACKPACK_SIZE do
+			newBackpack[i] = state.Backpack[i]
+		end
+
+		local function getItem(gridIndex)
+			if gridIndex <= 21 then
+				return newBackpack[gridIndex]
+			else
+				return newHotbar[gridIndex - 21]
+			end
+		end
+
+		local function setItem(gridIndex, item)
+			if gridIndex <= 21 then
+				newBackpack[gridIndex] = item
+			else
+				newHotbar[gridIndex - 21] = item
+			end
+		end
+
+		local fromItem = getItem(fromGridIndex)
+		local toItem = getItem(toGridIndex)
+		setItem(fromGridIndex, toItem)
+		setItem(toGridIndex, fromItem)
+
 		return {
-			BreakHotbar = state.BreakHotbar,
-			BuildHotbar = state.BuildHotbar,
-			Backpack = state.Backpack,
-			CurrentMode = state.CurrentMode,
+			Hotbar = newHotbar,
+			Backpack = newBackpack,
 			EquippedSlot = state.EquippedSlot,
+			HammerAvailable = state.HammerAvailable,
 			BackpackOpen = state.BackpackOpen,
-			SearchQuery = action.query,
 		}
 	end,
 })

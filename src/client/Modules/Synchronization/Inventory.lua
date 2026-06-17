@@ -1,11 +1,6 @@
 --[=[
-	Owner: Yokhaii
-	Version: 0.0.2
-	Contact owner if any question, concern or feedback
-
 	Inventory Synchronization Module
 	Connects InventoryService signals to Rodux store
-	Updated for dual-mode hotbar system (Break/Build)
 ]=]
 
 -- Services
@@ -21,50 +16,41 @@ local Actions = StarterPlayer.StarterPlayerScripts.Client.Rodux.Actions
 local InventoryActions = require(Actions.InventoryActions)
 
 -- Constants
-local HOTBAR_SIZE = 7 -- Per mode
+local HOTBAR_SIZE = 7
+local BACKPACK_SIZE = 21
 
 local Inventory = {}
 
 function Inventory:Init()
 	local InventoryService = Knit.GetService("InventoryService")
 
-	-- Handle inventory updates from server
 	InventoryService.InventoryUpdated:Connect(function(inventory)
-		-- Convert string-keyed hotbars to numeric indices
-		local convertedBreakHotbar = {}
-		local convertedBuildHotbar = {}
-
+		-- Convert string-keyed hotbar to numeric indices
+		local convertedHotbar = {}
 		for i = 1, HOTBAR_SIZE do
-			convertedBreakHotbar[i] = inventory.BreakHotbar[tostring(i)]
-			convertedBuildHotbar[i] = inventory.BuildHotbar[tostring(i)]
+			convertedHotbar[i] = inventory.Hotbar[tostring(i)]
 		end
 
-		-- Dispatch to store
+		-- Convert string-keyed backpack to numeric indices
+		local convertedBackpack = {}
+		for i = 1, BACKPACK_SIZE do
+			convertedBackpack[i] = inventory.Backpack[tostring(i)]
+		end
+
 		Store:dispatch(InventoryActions.setInventory({
-			BreakHotbar = convertedBreakHotbar,
-			BuildHotbar = convertedBuildHotbar,
-			Backpack = inventory.Backpack,
-			CurrentMode = inventory.CurrentMode,
+			Hotbar = convertedHotbar,
+			Backpack = convertedBackpack,
 			EquippedSlot = inventory.EquippedSlot,
 		}))
 	end)
 
-	-- Handle mode change
-	InventoryService.ModeChanged:Connect(function(newMode)
-		Store:dispatch(InventoryActions.setCurrentMode(newMode))
-	end)
-
-	-- Handle item equipped
 	InventoryService.ItemEquipped:Connect(function(slot, itemName)
 		Store:dispatch(InventoryActions.setEquippedSlot(slot))
 	end)
 
-	-- Handle item unequipped
 	InventoryService.ItemUnequipped:Connect(function()
 		Store:dispatch(InventoryActions.setEquippedSlot(nil))
 	end)
-
-	print("[Inventory Sync] Initialized (Dual-Mode)")
 end
 
 return Inventory

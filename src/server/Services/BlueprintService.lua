@@ -344,15 +344,7 @@ function BlueprintService:PlaceBlueprint(player, position, blueprintType, rotati
 		return false, "No item equipped"
 	end
 
-	local currentHotbar = inventory.CurrentMode == "Break"
-		and inventory.BreakHotbar
-		or inventory.BuildHotbar
-
-	if not currentHotbar then
-		return false, "No hotbar found"
-	end
-
-	local equippedItem = currentHotbar[inventory.EquippedSlot]
+	local equippedItem = inventory.Hotbar[inventory.EquippedSlot]
 	local expectedItemName = blueprintType .. "Blueprint"
 	if not equippedItem or equippedItem.itemName ~= expectedItemName then
 		warn("[BlueprintService] Wrong item equipped:", equippedItem and equippedItem.itemName or "nil", "expected:", expectedItemName)
@@ -814,16 +806,7 @@ function BlueprintService:PlaceStructure(player, position, structureItemName, ro
 		return false
 	end
 
-	local currentHotbar = inventory.CurrentMode == "Break"
-		and inventory.BreakHotbar
-		or inventory.BuildHotbar
-
-	if not currentHotbar then
-		warn("No hotbar found")
-		return false
-	end
-
-	local equippedItem = currentHotbar[inventory.EquippedSlot]
+	local equippedItem = inventory.Hotbar[inventory.EquippedSlot]
 	if not equippedItem or equippedItem.itemName ~= structureItemName then
 		warn("Different item equipped")
 		return false

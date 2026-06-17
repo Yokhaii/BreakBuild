@@ -5,10 +5,16 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
+local StarterPlayer = game:GetService("StarterPlayer")
 
 -- Knit packages
 local Packages = ReplicatedStorage.Packages
 local Knit = require(Packages.Knit)
+
+-- Rodux
+local Store = require(StarterPlayer.StarterPlayerScripts.Client.Rodux.Store)
+local Actions = StarterPlayer.StarterPlayerScripts.Client.Rodux.Actions
+local InventoryActions = require(Actions.InventoryActions)
 
 -- Player
 local player = Players.LocalPlayer
@@ -16,6 +22,9 @@ local mouse = player:GetMouse()
 
 -- Data
 local ItemData = require(ReplicatedStorage.Shared.Data.Items)
+
+-- Controllers (resolved at KnitStart)
+local DistanceFadeController
 
 -- BuildingController
 local BuildingController = Knit.CreateController({
@@ -25,7 +34,7 @@ local BuildingController = Knit.CreateController({
 -- Constants
 local PREVIEW_TRANSPARENCY = 0.5
 local WALLLIMIT_TRANSPARENCY  = 0.9
-local HIGHLIGHT_VALID_COLOR = Color3.fromRGB(230, 230, 230) -- White greyish
+local HIGHLIGHT_VALID_COLOR = Color3.fromRGB(0, 0, 0) -- White greyish
 local HIGHLIGHT_INVALID_COLOR = Color3.fromRGB(255, 0, 0) -- Red
 local GRID_SIZE = 2 -- 2-stud grid (same as server)
 
@@ -40,6 +49,7 @@ local BlueprintPlacementController
 local buildingMode = false
 local currentBlockItem = nil
 local previewModel = nil
+local previewGlassModel = nil -- Glass copy for highlights
 local previewHighlights = {} -- Array of highlights (one per part)
 local currentPosition = nil
 local isValidPlacement = false
@@ -58,6 +68,13 @@ local blueprintPreviewHighlight = nil
 local blueprintPreviewBillboard = nil
 local hoveredPreviewBlueprint = nil
 local hoveredPreviewType = nil -- "blueprint" or "structure"
+
+-- BuildingArea tracking state
+local playerInBuildingArea = false
+
+-- DistanceFade effect IDs
+local BUILDING_FADE_ID = "BuildingArea"
+local PREVIEW_FADE_ID = "PreviewBlock"
 
 -- References
 local buildingZone = nil
@@ -169,6 +186,31 @@ local function stopWallLimitPulsing()
 	for _, wallPart in ipairs(wallLimits) do
 		wallPart.Transparency = 1
 	end
+end
+
+-- Start DistanceFade effect on BuildingArea walls (visible from inside and outside)
+local function startDistanceFade()
+	if DistanceFadeController:IsActive(BUILDING_FADE_ID) then
+		return
+	end
+
+	local _, area = getBuildingZone()
+	if not area then
+		return
+	end
+
+	local faces = {
+		Enum.NormalId.Front,
+		Enum.NormalId.Back,
+		Enum.NormalId.Left,
+		Enum.NormalId.Right,
+	}
+	DistanceFadeController:Apply(BUILDING_FADE_ID, area, faces, "BuildingArea")
+end
+
+-- Stop DistanceFade effect
+local function stopDistanceFade()
+	DistanceFadeController:Stop(BUILDING_FADE_ID)
 end
 
 -- Detect block, structure, or uncompleted blueprint under cursor for removal
@@ -337,7 +379,7 @@ local function updateRemovalHighlight(target: Model?, targetType: string?)
 	local highlight = Instance.new("Highlight")
 	highlight.FillTransparency = 0.9
 	highlight.FillColor = Color3.fromRGB(255, 0, 0) -- Red fill
-	highlight.OutlineTransparency = 0.7
+	highlight.OutlineTransparency = 0.9
 	highlight.OutlineColor = Color3.new(0, 0, 0) -- Black outline
 	highlight.Adornee = highlightTarget
 	highlight.Parent = target
@@ -549,9 +591,9 @@ local function createPreviewModel(itemName: string): Model?
 	local function setupPart(part)
 		if part:IsA("BasePart") then
 			part.Transparency = PREVIEW_TRANSPARENCY
+			part.CastShadow = false
 			part.CanCollide = false
 			part.Anchored = true
-			-- Keep original material (Sand, Dirt, Stone, etc.)
 		end
 	end
 
@@ -569,33 +611,43 @@ local function createPreviewModel(itemName: string): Model?
 	return preview
 end
 
--- Create highlight for preview (add to each part)
-local function createHighlight(model)
+-- Create a glass copy of the preview model and attach highlights to it
+local function createGlassHighlight(model)
 	local highlights = {}
 
-	local function addHighlightToPart(part)
+	local glassCopy = model:Clone()
+	glassCopy.Name = model.Name .. "_Glass"
+
+	local function setupGlassPart(part)
 		if part:IsA("BasePart") then
+			part.Transparency = 1
+			part.Material = Enum.Material.Glass
+			part.CanCollide = false
+			part.CanQuery = false
+			part.CanTouch = false
+			part.Anchored = true
+
 			local highlight = Instance.new("Highlight")
 			highlight.FillTransparency = 1
-			highlight.OutlineTransparency = 0
+			highlight.OutlineTransparency = 0.5
 			highlight.OutlineColor = HIGHLIGHT_VALID_COLOR
 			highlight.Parent = part
 			table.insert(highlights, highlight)
 		end
 	end
 
-	if model:IsA("Model") then
-		for _, descendant in ipairs(model:GetDescendants()) do
-			addHighlightToPart(descendant)
+	if glassCopy:IsA("Model") then
+		for _, descendant in ipairs(glassCopy:GetDescendants()) do
+			setupGlassPart(descendant)
 		end
-		if model.PrimaryPart then
-			addHighlightToPart(model.PrimaryPart)
+		if glassCopy.PrimaryPart then
+			setupGlassPart(glassCopy.PrimaryPart)
 		end
-	elseif model:IsA("BasePart") then
-		addHighlightToPart(model)
+	elseif glassCopy:IsA("BasePart") then
+		setupGlassPart(glassCopy)
 	end
 
-	return highlights
+	return glassCopy, highlights
 end
 
 -- Update preview position and validation
@@ -608,12 +660,14 @@ local function updatePreview()
 	local _, area = getBuildingZone()
 	if not area then
 		previewModel.Parent = nil
+		if previewGlassModel then previewGlassModel.Parent = nil end
 		return
 	end
 
 	local character = player.Character
 	if not character or not character.PrimaryPart then
 		previewModel.Parent = nil
+		if previewGlassModel then previewGlassModel.Parent = nil end
 		return
 	end
 
@@ -630,6 +684,7 @@ local function updatePreview()
 	if not playerInArea then
 		-- Player outside building area, hide preview
 		previewModel.Parent = nil
+		if previewGlassModel then previewGlassModel.Parent = nil end
 		return
 	end
 
@@ -647,8 +702,11 @@ local function updatePreview()
 	-- Use RaycastFilterType.Exclude with a filter function to ignore parts with "Ignore" attribute
 	raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
 
-	-- Build filter list: character, preview, and any parts with Ignore attribute
+	-- Build filter list: character, preview, glass copy, and any parts with Ignore attribute
 	local filterList = {player.Character, previewModel}
+	if previewGlassModel then
+		table.insert(filterList, previewGlassModel)
+	end
 
 	-- Add all parts with "Ignore" attribute to filter
 	for _, part in ipairs(Workspace:GetDescendants()) do
@@ -676,6 +734,7 @@ local function updatePreview()
 	if not raycastResult then
 		-- No hit, hide preview
 		previewModel.Parent = nil
+		if previewGlassModel then previewGlassModel.Parent = nil end
 		return
 	end
 
@@ -736,6 +795,16 @@ local function updatePreview()
 		previewModel.Size = blockSize
 	end
 
+	-- Update glass copy position
+	if previewGlassModel then
+		if previewGlassModel:IsA("Model") and previewGlassModel.PrimaryPart then
+			previewGlassModel:SetPrimaryPartCFrame(CFrame.new(clampedPosition))
+		elseif previewGlassModel:IsA("BasePart") then
+			previewGlassModel.Position = clampedPosition
+			previewGlassModel.Size = blockSize
+		end
+	end
+
 	-- Update highlight outline color only
 	local targetColor = isValidPlacement and HIGHLIGHT_VALID_COLOR or HIGHLIGHT_INVALID_COLOR
 	for _, highlight in ipairs(previewHighlights) do
@@ -745,6 +814,9 @@ local function updatePreview()
 	-- Make sure preview is visible
 	if previewModel.Parent ~= Workspace then
 		previewModel.Parent = Workspace
+	end
+	if previewGlassModel and previewGlassModel.Parent ~= Workspace then
+		previewGlassModel.Parent = Workspace
 	end
 end
 
@@ -765,6 +837,9 @@ local function startBuildingMode(itemName: string)
 	-- Start pulsing animation for WallLimit parts
 	startWallLimitPulsing()
 
+	-- Start DistanceFade border effect
+	startDistanceFade()
+
 	-- Create preview model
 	previewModel = createPreviewModel(itemName)
 	if not previewModel then
@@ -773,9 +848,29 @@ local function startBuildingMode(itemName: string)
 		return
 	end
 
-	-- Create highlights (one per part)
-	previewHighlights = createHighlight(previewModel)
+	-- Create glass copy with highlights
+	previewGlassModel, previewHighlights = createGlassHighlight(previewModel)
+	previewGlassModel.Parent = Workspace
 
+	-- Apply DistanceFade to BuildingArea walls, tracked by the preview block's position
+	local _, area = getBuildingZone()
+	local previewPart = nil
+	if previewModel:IsA("BasePart") then
+		previewPart = previewModel
+	elseif previewModel:IsA("Model") and previewModel.PrimaryPart then
+		previewPart = previewModel.PrimaryPart
+	end
+	if previewPart and area then
+		local wallFaces = {
+			Enum.NormalId.Front,
+			Enum.NormalId.Back,
+			Enum.NormalId.Left,
+			Enum.NormalId.Right,
+		}
+		DistanceFadeController:Apply(PREVIEW_FADE_ID, area, wallFaces, "PreviewBlock", {
+			trackPart = previewPart,
+		})
+	end
 end
 
 -- Stop building mode
@@ -792,17 +887,24 @@ function stopBuildingMode()
 	-- Stop pulsing animation and hide WallLimit parts
 	stopWallLimitPulsing()
 
+	-- Stop DistanceFade border effect (only if not in removal mode)
+	if not removalMode then
+		stopDistanceFade()
+	end
+
+	-- Stop preview DistanceFade
+	DistanceFadeController:Stop(PREVIEW_FADE_ID)
+
 	-- Destroy preview
 	if previewModel then
 		previewModel:Destroy()
 		previewModel = nil
 	end
 
-	-- Destroy all highlights
-	for _, highlight in ipairs(previewHighlights) do
-		if highlight then
-			highlight:Destroy()
-		end
+	-- Destroy glass copy (highlights are children, destroyed with it)
+	if previewGlassModel then
+		previewGlassModel:Destroy()
+		previewGlassModel = nil
 	end
 	previewHighlights = {}
 
@@ -827,6 +929,9 @@ local function startRemovalMode()
 	-- Start pulsing animation for WallLimit parts (same as building mode)
 	startWallLimitPulsing()
 
+	-- Start DistanceFade border effect
+	startDistanceFade()
+
 	print("Removal mode started")
 end
 
@@ -840,6 +945,11 @@ local function stopRemovalMode()
 
 	-- Stop pulsing animation and hide WallLimit parts
 	stopWallLimitPulsing()
+
+	-- Stop DistanceFade border effect (only if not in building mode)
+	if not buildingMode then
+		stopDistanceFade()
+	end
 
 	-- Remove highlight and billboard
 	if removalHighlight then
@@ -1020,6 +1130,11 @@ function BuildingController:StopBuildingMode()
 	stopBuildingMode()
 end
 
+-- Check if player is currently inside the BuildingArea
+function BuildingController:IsPlayerInBuildingArea(): boolean
+	return playerInBuildingArea
+end
+
 --|| Initialization ||--
 
 function BuildingController:KnitStart()
@@ -1028,6 +1143,7 @@ function BuildingController:KnitStart()
 	BlueprintService = Knit.GetService("BlueprintService")
 	InventoryController = Knit.GetController("InventoryController")
 	BlueprintPlacementController = Knit.GetController("BlueprintPlacementController")
+	DistanceFadeController = Knit.GetController("DistanceFadeController")
 
 	-- Get building zone
 	getBuildingZone()
@@ -1039,32 +1155,60 @@ function BuildingController:KnitStart()
 	InventoryService.ItemEquipped:Connect(onItemEquipped)
 	InventoryService.ItemUnequipped:Connect(onItemUnequipped)
 
-	-- Update preview and removal mode every frame
+	-- Update preview, removal mode, and BuildingArea tracking every frame
 	RunService.RenderStepped:Connect(function()
+		-- Track player entering/leaving BuildingArea
+		local _, area = getBuildingZone()
+		local inArea = false
+		if area then
+			local character = player.Character
+			if character and character.PrimaryPart then
+				local playerPosition = character.PrimaryPart.Position
+				local areaPosition = area.Position
+				local halfSize = area.Size / 2
+				inArea = math.abs(playerPosition.X - areaPosition.X) <= halfSize.X
+					and math.abs(playerPosition.Y - areaPosition.Y) <= halfSize.Y
+					and math.abs(playerPosition.Z - areaPosition.Z) <= halfSize.Z
+			end
+		end
+
+		if inArea ~= playerInBuildingArea then
+			playerInBuildingArea = inArea
+			Store:dispatch(InventoryActions.setHammerAvailable(inArea))
+
+			-- Auto-unequip Hammer when leaving area
+			if not inArea then
+				local state = Store:getState().InventoryReducer
+				if state.EquippedSlot == 0 then
+					InventoryService:UnequipItem()
+				end
+			end
+		end
+
 		if removalMode then
-			-- Hammer equipped - removal mode handles highlighting
 			updateRemovalMode()
 			clearBlueprintPreviewHighlight()
 		else
-			-- Always check for blueprint preview when in Build inventory mode (not hammer)
-			if InventoryController then
-				local currentMode = InventoryController:GetCurrentMode()
-				if currentMode == "Build" then
-					updateBlueprintPreviewMode()
-				else
-					clearBlueprintPreviewHighlight()
-				end
+			-- Show blueprint preview when inside BuildingArea
+			if playerInBuildingArea then
+				updateBlueprintPreviewMode()
+			else
+				clearBlueprintPreviewHighlight()
 			end
 
-			-- Update building preview if active
 			if buildingMode then
-				-- Hide block preview when hovering over completed structure
 				if hoveredPreviewBlueprint and hoveredPreviewType == "structure" then
 					if previewModel and previewModel.Parent then
 						previewModel.Parent = nil
 					end
+					if previewGlassModel and previewGlassModel.Parent then
+						previewGlassModel.Parent = nil
+					end
 				else
 					updatePreview()
+					if previewGlassModel and not previewGlassModel.Parent then
+						previewGlassModel.Parent = Workspace
+					end
 				end
 			end
 		end

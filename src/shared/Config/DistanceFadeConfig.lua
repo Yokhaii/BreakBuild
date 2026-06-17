@@ -1,0 +1,85 @@
+--[[
+	DistanceFadeConfig.lua
+	Named presets for the DistanceFade effect.
+	Each preset defines a full set of settings that can be applied to any part.
+]]
+
+local DistanceFadeConfig = {}
+
+DistanceFadeConfig.Presets = {
+	BuildingArea = {
+		DistanceOuter = 96,
+		DistanceInner = 56,
+		EffectRadius = 64,
+		EffectRadiusMin = 0,
+		EdgeDistanceCalculations = false,
+		Texture = "rbxassetid://18838056070",
+		TextureTransparency = 0.8,
+		TextureTransparencyMin = 1,
+		BackgroundTransparency = 1,
+		BackgroundTransparencyMin = 1,
+		TextureColor = Color3.fromRGB(116, 183, 255),
+		BackgroundColor = Color3.fromRGB(255, 255, 255),
+		TextureSize = Vector2.new(128, 128),
+		TextureOffset = Vector2.new(96, 32),
+		StaticTexture = true,
+		ZOffset = 0,
+		AlwaysOnTop = false,
+		Brightness = 5,
+		LightInfluence = 0,
+		MaxDistance = 1000,
+		PixelsPerStud = 100,
+		SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
+	},
+
+	PreviewBlock = {
+		DistanceOuter = 12,
+		DistanceInner = 6,
+		EffectRadius = 12,
+		EffectRadiusMin = 0,
+		EdgeDistanceCalculations = false,
+		Texture = "rbxassetid://18838056070",
+		TextureTransparency = 0,
+		TextureTransparencyMin = 1,
+		BackgroundTransparency = 1,
+		BackgroundTransparencyMin = 1,
+		TextureColor = Color3.fromRGB(116, 183, 255),
+		BackgroundColor = Color3.fromRGB(255, 255, 255),
+		TextureSize = Vector2.new(4, 4),
+		TextureOffset = Vector2.new(0, 0),
+		StaticTexture = false,
+		ZOffset = 0,
+		AlwaysOnTop = false,
+		Brightness = 5,
+		LightInfluence = 0,
+		MaxDistance = 500,
+		PixelsPerStud = 100,
+		SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
+	},
+
+	Humanoid = {
+		DistanceOuter = 12,
+		DistanceInner = 4,
+		EffectRadius = 8,
+		EffectRadiusMin = 0,
+		EdgeDistanceCalculations = false,
+		Texture = "rbxassetid://18838056070",
+		TextureTransparency = 0.3,
+		TextureTransparencyMin = 1,
+		BackgroundTransparency = 1,
+		BackgroundTransparencyMin = 1,
+		TextureColor = Color3.fromRGB(255, 200, 100),
+		BackgroundColor = Color3.fromRGB(255, 255, 255),
+		TextureSize = Vector2.new(2, 2),
+		TextureOffset = Vector2.new(0, 0),
+		ZOffset = 0,
+		AlwaysOnTop = false,
+		Brightness = 1,
+		LightInfluence = 0,
+		MaxDistance = 500,
+		PixelsPerStud = 100,
+		SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
+	},
+}
+
+return DistanceFadeConfig

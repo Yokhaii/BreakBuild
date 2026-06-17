@@ -1,31 +1,19 @@
 return {
 	TemplateData = 1,
 
-	-- Inventory System (Dual-Mode Hotbar)
+	-- Inventory System (Unified Hotbar)
 	Inventory = {
-		-- Break Hotbar: 6 slots for breaking tools (isBreakingTool = true)
-		BreakHotbar = {
+		-- Hotbar: 7 slots for any non-Ore item (tools, blocks, blueprints, structures)
+		Hotbar = {
 			-- Each slot: {id: string, itemName: string, quantity: number} or nil
-			-- Example: [1] = {id = "abc123", itemName = "WoodenPickaxe", quantity = 1}
-		},
-
-		-- Build Hotbar: 6 slots for building items (type = "Block" + Hammer in slot 1)
-		BuildHotbar = {
-			-- Slot 1 is always reserved for Hammer
-			-- Each slot: {id: string, itemName: string, quantity: number} or nil
-			-- Example: [2] = {id = "def456", itemName = "Dirt", quantity = 5}
 		},
 
 		-- Backpack: Expandable array of items
 		Backpack = {
 			-- Array of items: {id: string, itemName: string, quantity: number}
-			-- Example: {id = "ghi789", itemName = "Stone", quantity = 10}
 		},
 
-		-- Current hotbar mode: "Break" or "Build"
-		CurrentMode = "Build",
-
-		-- Currently equipped slot (1-6, relative to current mode's hotbar, or nil)
+		-- Currently equipped slot (nil, 0 for Hammer, or 1-7)
 		EquippedSlot = nil,
 
 		-- Next unique ID counter for items
@@ -50,29 +38,6 @@ return {
 
 		-- BuildingArea identifier for this player (defaults to UserId)
 		BuildingAreaId = nil,
-	},
-
-	-- Breaking System
-	Breaking = {
-		-- Array of spawned blocks in BreakingZone
-		SpawnedBlocks = {
-			-- Each block: {
-			--   id: string,
-			--   materialType: string (e.g., "Dirt", "Stone", "Sand"),
-			--   gridX: number (0-15),
-			--   gridZ: number (0-15),
-			--   floor: number (1, 2, or 3)
-			-- }
-		},
-
-		-- Next unique ID counter for blocks
-		NextBlockId = 1,
-
-		-- BreakingArea identifier for this player (defaults to UserId)
-		BreakingAreaId = nil,
-
-		-- Spawn interval in seconds (can be decreased by player upgrades)
-		SpawnInterval = 5,
 	},
 
 	-- Blueprint System

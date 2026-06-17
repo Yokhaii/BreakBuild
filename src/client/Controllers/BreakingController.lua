@@ -5,7 +5,6 @@
 	- Shows preview highlight when hovering
 	- Sends break requests to BreakingService
 	- Handles visual feedback (animations, VFX)
-	- Plays spawn animations for blocks (from BreakingAreaService)
 ]]
 
 -- Services
@@ -13,7 +12,6 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 -- Knit packages
@@ -47,7 +45,7 @@ type BreakableData = {
 
 -- Private variables
 local BreakingService
-local BreakingAreaService
+local GlobalBreakingAreaService
 local InventoryController
 local breakableData: {[string]: BreakableData} = {} -- Track breakable positions
 local isMouseDown = false
@@ -61,9 +59,6 @@ local isPlayingMiningAnimation = false
 local hoveredBreakableId: string? = nil
 local previewHighlight: Highlight? = nil
 local previewBillboard: BillboardGui? = nil
-
--- Spawn animation state (for blocks)
-local animatingBlocks: {[string]: Model} = {}
 
 -- Breaking shake animation state
 local shakeModel: (Model | BasePart)? = nil
@@ -80,125 +75,6 @@ local breakingColor: Color3? = nil
 local VFX_FOLDER_PATH = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("VFX"):WaitForChild("Breaking"):WaitForChild("4x4")
 
 -- References
-local breakingZone = nil
-
---|| Animation Functions ||--
-
--- Create a local model for spawn animation (blocks only)
-local function createLocalBlockModel(materialType: string, position: Vector3, blockId: string): Model?
-	local itemConfig = ItemData.GetItem(materialType)
-	if not itemConfig or not itemConfig.buildingPartPath then
-		return nil
-	end
-
-	local pathParts = string.split(itemConfig.buildingPartPath, ".")
-	local current = ReplicatedStorage
-
-	local startIndex = 1
-	if pathParts[1] == "ReplicatedStorage" then
-		startIndex = 2
-	end
-
-	for i = startIndex, #pathParts do
-		current = current:FindFirstChild(pathParts[i])
-		if not current then
-			return nil
-		end
-	end
-
-	if not current:IsA("Model") and not current:IsA("BasePart") then
-		return nil
-	end
-
-	local model = current:Clone()
-	model.Name = "SpawnAnim_" .. blockId
-
-	if model:IsA("Model") and model.PrimaryPart then
-		model:SetPrimaryPartCFrame(CFrame.new(position))
-	elseif model:IsA("BasePart") then
-		model.Position = position
-		model.Size = BreakingConfig.BlockSize
-		model.Anchored = true
-		model.CanCollide = false
-	end
-
-	-- Make parts non-collidable during animation
-	for _, part in ipairs(model:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.CanCollide = false
-		end
-	end
-
-	return model
-end
-
--- Animate a model/part from start to end position over duration
-local function animatePosition(model: Instance, startPos: Vector3, endPos: Vector3, duration: number, easingStyle: Enum.EasingStyle, easingDir: Enum.EasingDirection)
-	local startTime = tick()
-	local isModel = model:IsA("Model")
-
-	while true do
-		local elapsed = tick() - startTime
-		local alpha = math.clamp(elapsed / duration, 0, 1)
-
-		-- Apply easing
-		local easedAlpha = TweenService:GetValue(alpha, easingStyle, easingDir)
-		local currentPos = startPos:Lerp(endPos, easedAlpha)
-
-		if isModel and model.PrimaryPart then
-			model:PivotTo(CFrame.new(currentPos))
-		elseif model:IsA("BasePart") then
-			model.Position = currentPos
-		end
-
-		if alpha >= 1 then break end
-		RunService.Heartbeat:Wait()
-	end
-end
-
--- Play spawn animation for a block
-local function playSpawnAnimation(blockData: {id: string, materialType: string, position: Vector3})
-	local blockId = blockData.id
-	local finalPosition = blockData.position
-
-	local model = createLocalBlockModel(blockData.materialType, finalPosition, blockId)
-	if not model then return end
-
-	-- Start position (underground)
-	local startY = finalPosition.Y + BreakingConfig.SpawnStartOffset
-	local overshootY = finalPosition.Y + BreakingConfig.SpawnOvershootHeight
-	local startPos = Vector3.new(finalPosition.X, startY, finalPosition.Z)
-	local overshootPos = Vector3.new(finalPosition.X, overshootY, finalPosition.Z)
-
-	-- Set initial position
-	if model:IsA("Model") and model.PrimaryPart then
-		model:PivotTo(CFrame.new(startPos))
-	elseif model:IsA("BasePart") then
-		model.Position = startPos
-	end
-
-	-- Parent to workspace
-	local zone = breakingZone or Workspace
-	model.Parent = zone
-
-	animatingBlocks[blockId] = model
-
-	-- Animation phases
-	local phase1Duration = BreakingConfig.SpawnAnimationDuration * 0.6
-	local phase2Duration = BreakingConfig.SpawnAnimationDuration * 0.4
-
-	-- Phase 1: Rise up with overshoot
-	animatePosition(model, startPos, overshootPos, phase1Duration, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-
-	-- Phase 2: Settle to final position
-	animatePosition(model, overshootPos, finalPosition, phase2Duration, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out)
-
-	-- Cleanup
-	if animatingBlocks[blockId] then
-		animatingBlocks[blockId]:Destroy()
-		animatingBlocks[blockId] = nil
-	end
-end
 
 --|| Mining Animation ||--
 
@@ -369,35 +245,26 @@ end
 
 --|| Tool Checking ||--
 
-local function isInBuildMode(): boolean
-	if not InventoryController then
-		return false
-	end
-
-	local inventory = InventoryController:GetInventory()
-	return inventory and inventory.CurrentMode == "Build"
-end
-
 local function getToolConfig()
 	if not InventoryController then
 		return { toolTier = BreakingConfig.BareHandToolTier, breakSpeed = BreakingConfig.BareHandBreakSpeed, isBareHand = true }
 	end
 
 	local inventory = InventoryController:GetInventory()
-	if not inventory or not inventory.EquippedSlot then
+	if not inventory or inventory.EquippedSlot == nil then
 		return { toolTier = BreakingConfig.BareHandToolTier, breakSpeed = BreakingConfig.BareHandBreakSpeed, isBareHand = true }
 	end
 
-	-- Get the correct hotbar based on current mode
-	local currentHotbar = inventory.CurrentMode == "Break"
-		and inventory.BreakHotbar
-		or inventory.BuildHotbar
-
-	if not currentHotbar then
+	-- Hammer (slot 0)
+	if inventory.EquippedSlot == 0 then
+		local hammerConfig = ItemData.GetItem("Hammer")
+		if hammerConfig and hammerConfig.isBreakingTool then
+			return hammerConfig
+		end
 		return { toolTier = BreakingConfig.BareHandToolTier, breakSpeed = BreakingConfig.BareHandBreakSpeed, isBareHand = true }
 	end
 
-	local equippedItem = currentHotbar[inventory.EquippedSlot]
+	local equippedItem = inventory.Hotbar[inventory.EquippedSlot]
 	if not equippedItem then
 		return { toolTier = BreakingConfig.BareHandToolTier, breakSpeed = BreakingConfig.BareHandBreakSpeed, isBareHand = true }
 	end
@@ -411,11 +278,6 @@ local function getToolConfig()
 end
 
 local function canBreakHoveredObject(): boolean
-	-- Cannot break in Build mode
-	if isInBuildMode() then
-		return false
-	end
-
 	if not hoveredBreakableId then return false end
 
 	local breakable = breakableData[hoveredBreakableId]
@@ -438,15 +300,6 @@ local function updateMiningAnimation()
 	elseif not shouldPlay and isPlayingMiningAnimation then
 		stopMiningAnimation()
 	end
-end
-
---|| Zone Functions ||--
-
-local function getBreakingZone()
-	if not breakingZone then
-		breakingZone = Workspace:FindFirstChild("BreakingZone")
-	end
-	return breakingZone
 end
 
 --|| Detection Functions ||--
@@ -478,7 +331,7 @@ local function detectBreakableUnderCursor(): (string?, Instance?)
 		local breakableIdValue = current:FindFirstChild("BreakableId")
 		local playerIdValue = current:FindFirstChild("PlayerId")
 
-		if breakableIdValue and playerIdValue and playerIdValue.Value == player.UserId then
+		if breakableIdValue and playerIdValue and (playerIdValue.Value == player.UserId or playerIdValue.Value == 0) then
 			-- Found breakable, check range
 			local character = player.Character
 			if character then
@@ -509,7 +362,7 @@ local function detectBreakableUnderCursor(): (string?, Instance?)
 			breakableIdValue = current.PrimaryPart:FindFirstChild("BreakableId")
 			playerIdValue = current.PrimaryPart:FindFirstChild("PlayerId")
 
-			if breakableIdValue and playerIdValue and playerIdValue.Value == player.UserId then
+			if breakableIdValue and playerIdValue and (playerIdValue.Value == player.UserId or playerIdValue.Value == 0) then
 				-- Found breakable on PrimaryPart, check range
 				local character = player.Character
 				if character then
@@ -577,7 +430,20 @@ local function updatePreviewHighlight(breakableId: string?, model: Instance?)
 	-- Create billboard with material name
 	if targetPart then
 		local breakable = breakableData[breakableId]
-		local materialType = breakable and breakable.materialType or "Unknown"
+		local materialType
+		if breakable then
+			materialType = breakable.materialType
+		else
+			local matValue = targetPart:FindFirstChild("MaterialType")
+			materialType = matValue and matValue.Value or "Unknown"
+			if materialType ~= "Unknown" then
+				breakableData[breakableId] = {
+					id = breakableId,
+					materialType = materialType,
+					position = targetPart.Position,
+				}
+			end
+		end
 		local matProps = MaterialData.GetProperties(materialType)
 		local displayName = matProps and matProps.displayName or materialType
 
@@ -675,11 +541,6 @@ end
 
 local function onBreakableUnregistered(breakableId: string)
 	breakableData[breakableId] = nil
-
-	if animatingBlocks[breakableId] then
-		animatingBlocks[breakableId]:Destroy()
-		animatingBlocks[breakableId] = nil
-	end
 end
 
 local function onBreakingProgress(breakableId: string, progress: number)
@@ -772,25 +633,6 @@ local function onBreakableBroken(breakableId: string, dropItem: string, position
 	end)
 end
 
--- Block spawn animation (from BreakingAreaService)
-local function onBlockAboutToSpawn(blockData: {id: string, materialType: string, position: Vector3})
-	-- Store data
-	breakableData[blockData.id] = {
-		id = blockData.id,
-		materialType = blockData.materialType,
-		position = blockData.position,
-	}
-
-	-- Play spawn animation
-	task.spawn(function()
-		playSpawnAnimation(blockData)
-	end)
-end
-
-local function onBlockSpawned(blockData: {id: string, materialType: string, position: Vector3})
-	-- Block is now fully spawned on server, animation should be done
-end
-
 --|| Input Handling ||--
 
 local function onInputBegan(input: InputObject, gameProcessed: boolean)
@@ -825,12 +667,11 @@ end
 --|| Knit Lifecycle ||--
 
 function BreakingController:KnitInit()
-	breakingZone = getBreakingZone()
 end
 
 function BreakingController:KnitStart()
 	BreakingService = Knit.GetService("BreakingService")
-	BreakingAreaService = Knit.GetService("BreakingAreaService")
+	GlobalBreakingAreaService = Knit.GetService("GlobalBreakingAreaService")
 	InventoryController = Knit.GetController("InventoryController")
 
 	-- Connect to BreakingService events
@@ -840,9 +681,20 @@ function BreakingController:KnitStart()
 	BreakingService.BreakingStopped:Connect(onBreakingStopped)
 	BreakingService.BreakableBroken:Connect(onBreakableBroken)
 
-	-- Connect to BreakingAreaService events (for spawn animations)
-	BreakingAreaService.BlockAboutToSpawn:Connect(onBlockAboutToSpawn)
-	BreakingAreaService.BlockSpawned:Connect(onBlockSpawned)
+	-- Connect to GlobalBreakingAreaService events
+	GlobalBreakingAreaService.CycleReset:Connect(function()
+		for id, _ in pairs(breakableData) do
+			if string.find(id, "^global_") then
+				breakableData[id] = nil
+			end
+		end
+		if currentBreakingId and string.find(currentBreakingId, "^global_") then
+			stopBreaking()
+		end
+		if hoveredBreakableId and string.find(hoveredBreakableId, "^global_") then
+			clearPreviewHighlight()
+		end
+	end)
 
 	-- Input
 	UserInputService.InputBegan:Connect(onInputBegan)
@@ -851,7 +703,7 @@ function BreakingController:KnitStart()
 	-- Update loop
 	RunService.Heartbeat:Connect(onHeartbeat)
 
-	-- Get initial breakables
+	-- Get initial per-player breakables
 	task.spawn(function()
 		local breakables = BreakingService:GetBreakables()
 		if breakables and type(breakables) == "table" then

@@ -1,10 +1,10 @@
 --[[
 	BreakingService.lua
 	Unified breaking system that handles breaking ANY breakable object
-	- Breakables are registered by spawner services (BreakingAreaService, TreeService, etc.)
+	- Breakables are registered by spawner services (GlobalBreakingAreaService, TreeService, etc.)
 	- Each breakable has: id, materialType, dropItem, dropAmount, position
 	- Handles breaking progress, tool validation, and item drops
-	- Fires events when breakables are destroyed (spawners listen to respawn)
+	- Supports both per-player and global (shared) breakables
 ]]
 
 -- Knit Packages
@@ -72,6 +72,10 @@ type BreakingState = {
 local playerBreakables: {[Player]: {[string]: RuntimeBreakable}} = {} -- Registered breakables per player
 local playerBreaking: {[Player]: BreakingState} = {} -- Currently breaking state per player
 
+-- Global breakables (shared across all players)
+local globalBreakables: {[string]: RuntimeBreakable} = {}
+local globalBreaking: {[Player]: BreakingState} = {}
+
 -- Signal module for server-side events
 local Signal = require(ReplicatedStorage.Packages.Signal)
 
@@ -90,16 +94,18 @@ local function getEquippedToolConfig(player: Player): any
 	if not InventoryService then return BARE_HAND_CONFIG end
 
 	local inventory = InventoryService:GetInventory(player)
-	if not inventory or not inventory.EquippedSlot then return BARE_HAND_CONFIG end
+	if not inventory or inventory.EquippedSlot == nil then return BARE_HAND_CONFIG end
 
-	-- Get the correct hotbar based on current mode
-	local currentHotbar = inventory.CurrentMode == "Break"
-		and inventory.BreakHotbar
-		or inventory.BuildHotbar
+	-- Hammer (slot 0)
+	if inventory.EquippedSlot == 0 then
+		local hammerConfig = ItemData.GetItem("Hammer")
+		if hammerConfig and hammerConfig.isBreakingTool then
+			return hammerConfig
+		end
+		return BARE_HAND_CONFIG
+	end
 
-	if not currentHotbar then return BARE_HAND_CONFIG end
-
-	local equippedItem = currentHotbar[inventory.EquippedSlot]
+	local equippedItem = inventory.Hotbar[inventory.EquippedSlot]
 	if not equippedItem then return BARE_HAND_CONFIG end
 
 	local itemConfig = ItemData.GetItem(equippedItem.itemName)
@@ -148,7 +154,7 @@ end
 --|| Public Functions ||--
 
 -- Register a breakable object for a player
--- Called by spawner services (BreakingAreaService, TreeService, etc.)
+-- Called by spawner services (TreeService, etc.)
 function BreakingService:RegisterBreakable(player: Player, breakableId: string, config: BreakableConfig)
 	if not playerBreakables[player] then
 		playerBreakables[player] = {}
@@ -192,14 +198,18 @@ end
 
 -- Start breaking a breakable
 function BreakingService:StartBreaking(player: Player, breakableId: string): boolean
+	-- Check per-player breakables first
 	local breakables = playerBreakables[player]
-	if not breakables then
-		return false
-	end
+	local breakable = breakables and breakables[breakableId]
 
-	local breakable = breakables[breakableId]
+	local isGlobal = false
 	if not breakable then
-		return false
+		-- Check global breakables
+		breakable = globalBreakables[breakableId]
+		if not breakable then
+			return false
+		end
+		isGlobal = true
 	end
 
 	-- Get tool config (returns bare hand config if no tool equipped)
@@ -218,13 +228,18 @@ function BreakingService:StartBreaking(player: Player, breakableId: string): boo
 		breakTime = MaterialData.GetBreakTime(breakable.materialType, toolConfig.breakSpeed)
 	end
 
-	-- Set breaking state
-	playerBreaking[player] = {
+	local state = {
 		breakableId = breakableId,
 		startTime = tick(),
 		totalBreakTime = breakTime,
 		toolConfig = toolConfig,
 	}
+
+	if isGlobal then
+		globalBreaking[player] = state
+	else
+		playerBreaking[player] = state
+	end
 
 	-- Notify client
 	self.Client.BreakingStarted:Fire(player, breakableId)
@@ -235,13 +250,17 @@ end
 -- Stop breaking
 function BreakingService:StopBreaking(player: Player)
 	local state = playerBreaking[player]
-	if not state then return end
+	if state then
+		playerBreaking[player] = nil
+		self.Client.BreakingStopped:Fire(player, state.breakableId)
+		return
+	end
 
-	local breakableId = state.breakableId
-	playerBreaking[player] = nil
-
-	-- Notify client
-	self.Client.BreakingStopped:Fire(player, breakableId)
+	local globalState = globalBreaking[player]
+	if globalState then
+		globalBreaking[player] = nil
+		self.Client.BreakingStopped:Fire(player, globalState.breakableId)
+	end
 end
 
 -- Get all breakables for a player (for client initialization)
@@ -254,10 +273,57 @@ function BreakingService:HasBreakable(player: Player, breakableId: string): bool
 	return playerBreakables[player] and playerBreakables[player][breakableId] ~= nil
 end
 
+--|| Global Breakable Functions ||--
+
+function BreakingService:RegisterGlobalBreakable(breakableId: string, config: BreakableConfig)
+	local breakable: RuntimeBreakable = {
+		id = breakableId,
+		materialType = config.materialType,
+		dropItem = config.dropItem,
+		dropAmount = config.dropAmount or 1,
+		position = config.position,
+		part = config.part,
+		customBreakTime = config.customBreakTime,
+		onBroken = config.onBroken,
+	}
+
+	globalBreakables[breakableId] = breakable
+end
+
+function BreakingService:UnregisterGlobalBreakable(breakableId: string)
+	globalBreakables[breakableId] = nil
+
+	for player, state in pairs(globalBreaking) do
+		if state.breakableId == breakableId then
+			globalBreaking[player] = nil
+			self.Client.BreakingStopped:Fire(player, breakableId)
+		end
+	end
+end
+
+function BreakingService:HasGlobalBreakable(breakableId: string): boolean
+	return globalBreakables[breakableId] ~= nil
+end
+
+function BreakingService:GetGlobalBreakables()
+	local data = {}
+	for id, breakable in pairs(globalBreakables) do
+		data[id] = {
+			materialType = breakable.materialType,
+			position = breakable.position,
+		}
+	end
+	return data
+end
+
 --|| Client Functions ||--
 
 function BreakingService.Client:GetBreakables(player: Player)
 	return self.Server:GetBreakables(player)
+end
+
+function BreakingService.Client:GetGlobalBreakables(player: Player)
+	return self.Server:GetGlobalBreakables()
 end
 
 function BreakingService.Client:StartBreaking(player: Player, breakableId: string)
@@ -348,6 +414,80 @@ local function updateBreakingProgress()
 			BreakingService.Client.BreakableBroken:Fire(player, breakableId, dropItem, position)
 		end
 	end
+
+	-- Global breaking progress
+	for player, state in pairs(globalBreaking) do
+		if not player.Parent then
+			globalBreaking[player] = nil
+			continue
+		end
+
+		local breakable = globalBreakables[state.breakableId]
+		if not breakable then
+			globalBreaking[player] = nil
+			BreakingService.Client.BreakingStopped:Fire(player, state.breakableId)
+			continue
+		end
+
+		local toolConfig = getEquippedToolConfig(player)
+		if not canToolBreakMaterial(toolConfig, breakable.materialType) then
+			globalBreaking[player] = nil
+			BreakingService.Client.BreakingStopped:Fire(player, state.breakableId)
+			continue
+		end
+
+		local elapsed = currentTime - state.startTime
+		local progress = math.clamp(elapsed / state.totalBreakTime, 0, 1)
+
+		BreakingService.Client.BreakingProgress:Fire(player, state.breakableId, progress)
+
+		if progress >= 1 then
+			local breakableId = state.breakableId
+			local dropItem = breakable.dropItem
+			local dropAmount = breakable.dropAmount
+			local position = breakable.position
+			local part = breakable.part
+			local onBroken = breakable.onBroken
+
+			-- Remove from global runtime
+			globalBreakables[breakableId] = nil
+
+			-- Clear this player's breaking state
+			globalBreaking[player] = nil
+
+			-- Stop all other players breaking this same block
+			for otherPlayer, otherState in pairs(globalBreaking) do
+				if otherState.breakableId == breakableId then
+					globalBreaking[otherPlayer] = nil
+					BreakingService.Client.BreakingStopped:Fire(otherPlayer, breakableId)
+				end
+			end
+
+			-- Destroy the part
+			if part and part.Parent then
+				part:Destroy()
+			end
+
+			-- Give item to the player who finished
+			if dropItem and dropItem ~= "" then
+				giveItemToPlayer(player, dropItem, dropAmount)
+			end
+
+			if onBroken then
+				task.spawn(function()
+					onBroken(player, breakableId)
+				end)
+			end
+
+			-- Fire server-side event
+			BreakingService.BreakableDestroyed:Fire(player, breakableId, dropItem, position)
+
+			-- Notify ALL clients
+			for _, p in ipairs(Players:GetPlayers()) do
+				BreakingService.Client.BreakableBroken:Fire(p, breakableId, dropItem, position)
+			end
+		end
+	end
 end
 
 --|| Knit Lifecycle ||--
@@ -364,6 +504,7 @@ function BreakingService:KnitStart()
 	Players.PlayerRemoving:Connect(function(player)
 		playerBreaking[player] = nil
 		playerBreakables[player] = nil
+		globalBreaking[player] = nil
 	end)
 
 	-- Start breaking progress loop

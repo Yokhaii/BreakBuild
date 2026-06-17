@@ -17,10 +17,9 @@ local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
 
 -- Modules
 local Roact = require(ReplicatedStorage.Packages.Roact)
-local HUD = require(Applications.HUD.Application)
-local BlueprintApplication = require(Applications.Blueprint.Application)
-
---local GlobalHoveredFrame = require(Applications.GlobalHoveredFrame.Application)
+local HUD = require(Applications.HUD)
+local BlueprintApplication = require(Applications.Blueprint)
+local BackpackApplication = require(Applications.Backpack)
 
 local function Root(props, hooks)
 	return Roact.createElement(ContextStack, {
@@ -41,6 +40,7 @@ local function GameFrame()
 		}, {
 			HUD = Roact.createElement(HUD),
 			Blueprint = Roact.createElement(BlueprintApplication),
+			Backpack = Roact.createElement(BackpackApplication),
 		}),
 	})
 end
