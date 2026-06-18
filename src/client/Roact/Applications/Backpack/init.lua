@@ -16,6 +16,7 @@ local StudBackground = require(Components.Global.StudBackground)
 local DarkOverlay = require(Components.Global.DarkOverlay)
 
 local BackpackSlot = require(script.Components.BackpackSlot)
+local DevItemPicker = require(script.Components.DevItemPicker)
 
 local Config = require(script.Config)
 
@@ -168,6 +169,8 @@ local function Backpack(props, hooks)
 					LayoutOrder = 2,
 				}, hotbarGridChildren),
 			}),
+
+			DevItemPicker = Roact.createElement(DevItemPicker),
 		}),
 	})
 end

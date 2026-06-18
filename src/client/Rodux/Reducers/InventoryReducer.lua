@@ -77,6 +77,34 @@ local InventoryReducer = Rodux.createReducer(defaultState, {
 		}
 	end,
 
+	removeGridSlot = function(state, action)
+		local gridIndex = action.gridIndex
+
+		local newHotbar = {}
+		for i = 1, HOTBAR_SIZE do
+			newHotbar[i] = state.Hotbar[i]
+		end
+
+		local newBackpack = {}
+		for i = 1, BACKPACK_SIZE do
+			newBackpack[i] = state.Backpack[i]
+		end
+
+		if gridIndex <= BACKPACK_SIZE then
+			newBackpack[gridIndex] = nil
+		else
+			newHotbar[gridIndex - BACKPACK_SIZE] = nil
+		end
+
+		return {
+			Hotbar = newHotbar,
+			Backpack = newBackpack,
+			EquippedSlot = state.EquippedSlot,
+			HammerAvailable = state.HammerAvailable,
+			BackpackOpen = state.BackpackOpen,
+		}
+	end,
+
 	swapGridSlots = function(state, action)
 		local fromGridIndex = action.fromGridIndex
 		local toGridIndex = action.toGridIndex

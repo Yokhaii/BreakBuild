@@ -123,7 +123,15 @@ local function endDrag()
 	local mousePos = UserInputService:GetMouseLocation()
 	local targetGridIndex = findDropZoneAtPosition(mousePos.X, mousePos.Y)
 
-	if targetGridIndex and targetGridIndex ~= dragState.sourceGridIndex then
+	if targetGridIndex == -1 then
+		-- Trash zone: remove the item
+		local item = dragState.item
+		local fromIdx = dragState.sourceGridIndex
+		Store:dispatch(InventoryActions.removeGridSlot(fromIdx))
+		task.spawn(function()
+			InventoryService:DevRemoveItem(item.id)
+		end)
+	elseif targetGridIndex and targetGridIndex ~= dragState.sourceGridIndex then
 		Store:dispatch(InventoryActions.swapGridSlots(dragState.sourceGridIndex, targetGridIndex))
 
 		local fromIdx = dragState.sourceGridIndex

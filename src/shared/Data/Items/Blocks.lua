@@ -14,6 +14,19 @@ local Blocks = {
 		blockSize = Vector3.new(4, 4, 4), -- Building block size in studs
 		buildingPartPath = "ReplicatedStorage.Assets.BuildingParts.Dirt",
 	},
+	Grass = {
+		name = "Grass",
+		displayName = "Grass",
+		type = "Block",
+		stackable = true,
+		maxStack = 64,
+		dropable = true,
+		description = "Basic dirt block",
+		modelPath = "ReplicatedStorage.Assets.Items.Grass",
+		blockSize = Vector3.new(4, 4, 4), -- Building block size in studs
+		buildingPartPath = "ReplicatedStorage.Assets.BuildingParts.Grass",
+	},
+
 
 	Stone = {
 		name = "Stone",

@@ -918,8 +918,24 @@ function InventoryService.Client:SwapGridSlots(player: Player, fromGridIndex: nu
 	return self.Server:SwapGridSlots(player, fromGridIndex, toGridIndex)
 end
 
+local RunService = game:GetService("RunService")
+
+local DEV_USER_IDS = {
+	[4882453838] = true, -- Yokhaii
+}
+
 function InventoryService.Client:AddItem(player: Player, itemName: string, quantity: number)
+	if not RunService:IsStudio() and not DEV_USER_IDS[player.UserId] then
+		return false
+	end
 	return self.Server:AddItem(player, itemName, quantity or 1)
+end
+
+function InventoryService.Client:DevRemoveItem(player: Player, itemId: string)
+	if not RunService:IsStudio() and not DEV_USER_IDS[player.UserId] then
+		return false
+	end
+	return self.Server:RemoveItem(player, itemId, math.huge)
 end
 
 -- KNIT START

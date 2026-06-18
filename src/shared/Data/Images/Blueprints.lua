@@ -1,4 +1,4 @@
 return {
-	WorkbenchBlueprint = "0",
-	FurnaceBlueprint = "0",
+	WorkbenchBlueprint = "70746456628445",
+	FurnaceBlueprint = "70746456628445",
 }
