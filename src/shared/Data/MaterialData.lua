@@ -58,6 +58,14 @@ MaterialData.Properties = {
         breakTime = 1.0,
         requiredTier = "Hand", -- Can be broken by bare hands
     },
+    Grass = {
+        displayName = "Grass",
+        rarity = "Common",
+        color = Color3.fromRGB(139, 90, 43),
+        -- Breaking properties
+        breakTime = 1.0,
+        requiredTier = "Hand", -- Can be broken by bare hands
+    },
     Stone = {
         displayName = "Stone",
         rarity = "Common",

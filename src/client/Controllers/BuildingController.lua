@@ -837,9 +837,6 @@ local function startBuildingMode(itemName: string)
 	-- Start pulsing animation for WallLimit parts
 	startWallLimitPulsing()
 
-	-- Start DistanceFade border effect
-	startDistanceFade()
-
 	-- Create preview model
 	previewModel = createPreviewModel(itemName)
 	if not previewModel then
@@ -887,11 +884,6 @@ function stopBuildingMode()
 	-- Stop pulsing animation and hide WallLimit parts
 	stopWallLimitPulsing()
 
-	-- Stop DistanceFade border effect (only if not in removal mode)
-	if not removalMode then
-		stopDistanceFade()
-	end
-
 	-- Stop preview DistanceFade
 	DistanceFadeController:Stop(PREVIEW_FADE_ID)
 
@@ -929,9 +921,6 @@ local function startRemovalMode()
 	-- Start pulsing animation for WallLimit parts (same as building mode)
 	startWallLimitPulsing()
 
-	-- Start DistanceFade border effect
-	startDistanceFade()
-
 	print("Removal mode started")
 end
 
@@ -945,11 +934,6 @@ local function stopRemovalMode()
 
 	-- Stop pulsing animation and hide WallLimit parts
 	stopWallLimitPulsing()
-
-	-- Stop DistanceFade border effect (only if not in building mode)
-	if not buildingMode then
-		stopDistanceFade()
-	end
 
 	-- Remove highlight and billboard
 	if removalHighlight then
@@ -1150,6 +1134,9 @@ function BuildingController:KnitStart()
 
 	-- Get building area info from server
 	buildingAreaInfo = BuildingService:GetBuildingAreaInfo()
+
+	-- Player DistanceFade on BuildingArea is always active
+	startDistanceFade()
 
 	-- Connect to inventory signals
 	InventoryService.ItemEquipped:Connect(onItemEquipped)

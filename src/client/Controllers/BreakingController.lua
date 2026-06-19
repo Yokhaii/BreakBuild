@@ -27,6 +27,7 @@ local mouse = player:GetMouse()
 local ItemData = require(ReplicatedStorage.Shared.Data.Items)
 local MaterialData = require(ReplicatedStorage.Shared.Data.MaterialData)
 local BreakingConfig = require(ReplicatedStorage.Shared.Config.BreakingConfig)
+local GlobalBreakingConfig = require(ReplicatedStorage.Shared.Config.GlobalBreakingConfig)
 
 -- BreakingController
 local BreakingController = Knit.CreateController({
@@ -47,6 +48,7 @@ type BreakableData = {
 local BreakingService
 local GlobalBreakingAreaService
 local InventoryController
+local DistanceFadeController
 local breakableData: {[string]: BreakableData} = {} -- Track breakable positions
 local isMouseDown = false
 local currentBreakingId: string? = nil
@@ -669,14 +671,47 @@ end
 function BreakingController:KnitInit()
 end
 
+local function startGlobalBreakingAreaFade()
+	local originPart = Workspace:FindFirstChild(GlobalBreakingConfig.OriginPartName)
+	if not originPart or not originPart:IsA("BasePart") then
+		warn("[BreakingController] GlobalBreakingArea origin part not found")
+		return
+	end
+
+	local gridSizeStuds = GlobalBreakingConfig.GridSizeX * GlobalBreakingConfig.BlockSize.X
+	local gridHeight = (GlobalBreakingConfig.MaxDepth + 15) * GlobalBreakingConfig.BlockSize.Y
+
+	local fadePart = Instance.new("Part")
+	fadePart.Name = "GlobalBreakingAreaFadeBounds"
+	fadePart.Size = Vector3.new(gridSizeStuds, gridHeight, gridSizeStuds)
+	fadePart.CFrame = CFrame.new(originPart.Position + Vector3.new(0, gridHeight / 2, 0))
+	fadePart.Anchored = true
+	fadePart.CanCollide = false
+	fadePart.CanQuery = false
+	fadePart.CanTouch = false
+	fadePart.Transparency = 1
+	fadePart.Parent = Workspace
+
+	DistanceFadeController:Apply("GlobalBreakingArea", fadePart, {
+		Enum.NormalId.Front,
+		Enum.NormalId.Back,
+		Enum.NormalId.Left,
+		Enum.NormalId.Right,
+	}, "GlobalBreakingArea")
+end
+
 function BreakingController:KnitStart()
 	BreakingService = Knit.GetService("BreakingService")
 	GlobalBreakingAreaService = Knit.GetService("GlobalBreakingAreaService")
 	InventoryController = Knit.GetController("InventoryController")
+	DistanceFadeController = Knit.GetController("DistanceFadeController")
+
+	startGlobalBreakingAreaFade()
 
 	-- Connect to BreakingService events
 	BreakingService.BreakableRegistered:Connect(onBreakableRegistered)
 	BreakingService.BreakableUnregistered:Connect(onBreakableUnregistered)
+	BreakingService.BreakingStarted:Connect(function() end) -- Required to prevent Knit queue exhaustion
 	BreakingService.BreakingProgress:Connect(onBreakingProgress)
 	BreakingService.BreakingStopped:Connect(onBreakingStopped)
 	BreakingService.BreakableBroken:Connect(onBreakableBroken)

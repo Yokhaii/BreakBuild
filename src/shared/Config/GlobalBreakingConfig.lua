@@ -18,7 +18,7 @@ return {
 	MountainNoise = {
 		Scale = 0.13,
 		Amplitude = 10,
-		BaseHeight = 2,
+		BaseHeight = 0,
 		Octaves = 1,
 		Persistence = 1,
 		Lacunarity = 0,

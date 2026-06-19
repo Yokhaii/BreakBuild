@@ -5,8 +5,12 @@ BiomeData.Biomes = {
 		displayName = "Mountain",
 		generationType = "heightmap",
 		material = "Stone",
+		topMaterial = "Grass",
+		subMaterial = "Dirt",
 		layers = {
-			{ maxHeightPercent = 1.0, material = "Stone" },
+			{ maxHeightPercent = 0.75, material = "Stone" },
+			{ maxHeightPercent = 0.90, material = "Dirt" },
+			{ maxHeightPercent = 1.0,  material = "Grass" },
 		},
 	},
 
@@ -14,11 +18,19 @@ BiomeData.Biomes = {
 		displayName = "Floating Island",
 		generationType = "islands",
 		material = "Stone",
+		topMaterial = "Grass",
+		subMaterial = "Dirt",
+		layers = {
+			{ maxHeightPercent = 0.75, material = "Stone" },
+			{ maxHeightPercent = 0.90, material = "Dirt" },
+			{ maxHeightPercent = 1.0,  material = "Grass" },
+		},
 		islandCount = {10, 15},
-		islandRadius = {1, 3},
-		minHeight = 3,
+		islandRadius = {3, 9},
+		minHeight = 12,
 		maxHeight = 75,
-		undergroundLayers = 3,
+		heightStep = {1, 2},
+		maxJumpGap = 2,
 	},
 }
 

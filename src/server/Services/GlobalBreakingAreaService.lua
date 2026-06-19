@@ -40,7 +40,7 @@ local function gridToWorldPosition(x: number, y: number, z: number): Vector3
 	local blockSize = GlobalBreakingConfig.BlockSize.X
 	local halfGrid = (GlobalBreakingConfig.GridSizeX * blockSize) / 2
 	local worldX = originPosition.X - halfGrid + (x * blockSize) + (blockSize / 2)
-	local worldY = originPosition.Y + ((y - 2) * blockSize) + (blockSize / 2)
+	local worldY = originPosition.Y + (y * blockSize) + (blockSize / 2)
 	local worldZ = originPosition.Z - halfGrid + (z * blockSize) + (blockSize / 2)
 	return Vector3.new(worldX, worldY, worldZ)
 end
@@ -133,10 +133,21 @@ local function placeBlockImmediate(x: number, y: number, z: number, materialType
 	})
 end
 
-local function placeLayer(y: number, materialType: string?)
+local function placeLayer(y: number, materialType: string?, biome: {}?)
 	local gridX = GlobalBreakingConfig.GridSizeX
 	local gridZ = GlobalBreakingConfig.GridSizeZ
-	local mat = materialType or "Stone"
+	local mat
+	if biome then
+		if y == 0 then
+			mat = biome.topMaterial or biome.material or "Stone"
+		elseif y == -1 then
+			mat = biome.subMaterial or biome.material or "Stone"
+		else
+			mat = biome.material or "Stone"
+		end
+	else
+		mat = materialType or "Stone"
+	end
 
 	for x = 0, gridX - 1 do
 		for z = 0, gridZ - 1 do
@@ -200,8 +211,9 @@ local function generateMountain()
 
 	-- Place ground + underground layers
 	local initialLayers = GlobalBreakingConfig.InitialUndergroundLayers
+	local biome = BiomeData.Biomes.Mountain
 	for y = 0, -(initialLayers - 1), -1 do
-		placeLayer(y, "Stone")
+		placeLayer(y, nil, biome)
 	end
 
 	lowestRevealedY = -(initialLayers - 1)
@@ -210,6 +222,9 @@ end
 --|| Floating Island Generation ||--
 
 local function generateFloatingIslands()
+	-- Base terrain identical to Mountain
+	generateMountain()
+
 	local biome = BiomeData.Biomes.FloatingIsland
 	local gridX = GlobalBreakingConfig.GridSizeX
 	local gridZ = GlobalBreakingConfig.GridSizeZ
@@ -217,43 +232,30 @@ local function generateFloatingIslands()
 	local rng = Random.new(currentSeed)
 	local islandCount = rng:NextInteger(biome.islandCount[1], biome.islandCount[2])
 
-	for _ = 1, islandCount do
-		local radius = rng:NextInteger(biome.islandRadius[1], biome.islandRadius[2])
-		local centerX = rng:NextInteger(radius, gridX - 1 - radius)
-		local centerZ = rng:NextInteger(radius, gridZ - 1 - radius)
-		local centerY = rng:NextInteger(biome.minHeight, biome.maxHeight)
+	-- Start the chain near the center of the grid at minimum height
+	local prevCenterX = math.floor(gridX / 2)
+	local prevCenterZ = math.floor(gridZ / 2)
+	local prevRadius = rng:NextInteger(biome.islandRadius[1], biome.islandRadius[2])
+	local currentY = biome.minHeight
 
-		-- Generate a roughly spherical/elliptical island
-		local heightVariation = math.max(1, math.floor(radius * 0.7))
-
+	local function placeIsland(centerX, centerZ, centerY, radius)
+		local heightVariation = math.max(2, math.floor(radius * 0.7))
 		for dx = -radius, radius do
 			for dz = -radius, radius do
 				local dist = math.sqrt(dx * dx + dz * dz)
 				if dist <= radius then
-					-- Taller in center, thinner at edges
 					local falloff = 1 - (dist / radius)
 					local columnHeight = math.max(1, math.floor(heightVariation * falloff + 0.5))
-
 					local x = centerX + dx
 					local z = centerZ + dz
-
 					if x >= 0 and x < gridX and z >= 0 and z < gridZ then
 						for dy = 0, columnHeight - 1 do
-							table.insert(placementQueue, {
-								x = x,
-								y = centerY + dy,
-								z = z,
-								materialType = biome.material,
-							})
+							local normalizedHeight = (dy + 1) / columnHeight
+							local mat = BiomeData.GetMaterialAtHeight("FloatingIsland", normalizedHeight)
+							table.insert(placementQueue, {x = x, y = centerY + dy, z = z, materialType = mat})
 						end
-						-- Add bottom layer for depth
 						for dy = 1, columnHeight - 1 do
-							table.insert(placementQueue, {
-								x = x,
-								y = centerY - dy,
-								z = z,
-								materialType = biome.material,
-							})
+							table.insert(placementQueue, {x = x, y = centerY - dy, z = z, materialType = biome.material})
 						end
 					end
 				end
@@ -261,13 +263,36 @@ local function generateFloatingIslands()
 		end
 	end
 
-	-- Place underground layers
-	local undergroundLayers = biome.undergroundLayers
-	for y = 0, -(undergroundLayers - 1), -1 do
-		placeLayer(y, biome.material)
-	end
+	placeIsland(prevCenterX, prevCenterZ, currentY, prevRadius)
 
-	lowestRevealedY = -(undergroundLayers - 1)
+	for _ = 2, islandCount do
+		local radius = rng:NextInteger(biome.islandRadius[1], biome.islandRadius[2])
+
+		-- Next island is placed just outside jump range from the previous island edge
+		-- Distance between centers = prevRadius + radius + gap (1-2 blocks)
+		local gap = rng:NextInteger(1, biome.maxJumpGap)
+		local minDist = prevRadius + radius + gap
+		local maxDist = minDist + 2
+
+		local angle = rng:NextNumber() * math.pi * 2
+		local dist = rng:NextInteger(minDist, maxDist)
+		local centerX = math.floor(prevCenterX + math.cos(angle) * dist + 0.5)
+		local centerZ = math.floor(prevCenterZ + math.sin(angle) * dist + 0.5)
+
+		-- Clamp to grid bounds
+		centerX = math.clamp(centerX, radius, gridX - 1 - radius)
+		centerZ = math.clamp(centerZ, radius, gridZ - 1 - radius)
+
+		-- Step height up by 1-2 blocks each island
+		local heightStep = rng:NextInteger(biome.heightStep[1], biome.heightStep[2])
+		currentY = math.min(currentY + heightStep, biome.maxHeight)
+
+		placeIsland(centerX, centerZ, currentY, radius)
+
+		prevCenterX = centerX
+		prevCenterZ = centerZ
+		prevRadius = radius
+	end
 end
 
 --|| Core Functions ||--
@@ -321,8 +346,7 @@ local function revealNextUndergroundLayer()
 	lowestRevealedY = nextY
 
 	local biome = BiomeData.Biomes[currentBiome]
-	local mat = biome and biome.material or "Stone"
-	placeLayer(nextY, mat)
+	placeLayer(nextY, nil, biome)
 end
 
 local function parseBreakableId(breakableId: string): (number?, number?, number?)
