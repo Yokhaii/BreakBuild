@@ -938,6 +938,14 @@ function InventoryService.Client:DevRemoveItem(player: Player, itemId: string)
 	return self.Server:RemoveItem(player, itemId, math.huge)
 end
 
+function InventoryService:IsDevPlayer(player: Player): boolean
+	return  true --RunService:IsStudio() or DEV_USER_IDS[player.UserId] == true
+end
+
+function InventoryService.Client:IsDevPlayer(player: Player): boolean
+	return self.Server:IsDevPlayer(player)
+end
+
 -- KNIT START
 function InventoryService:KnitStart()
 	DataService = Knit.GetService("DataService")

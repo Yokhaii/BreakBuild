@@ -1,5 +1,5 @@
 return {
-	-- Frame sizing & position (to the left of backpack)
+	-- Frame sizing & position (to the left of the parent panel)
 	FrameSize = UDim2.fromScale(0.6, 1.6),
 	FramePosition = UDim2.fromScale(-0.03, 1),
 	FrameAnchorPoint = Vector2.new(1, 1),

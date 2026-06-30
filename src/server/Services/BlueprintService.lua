@@ -246,28 +246,33 @@ local function onBlueprintCompleted(player, blueprint)
 	end
 end
 
--- Check if blueprint overlaps with existing blocks or blueprints
-local function hasCollision(player, relativePosition, blueprintSize)
-	-- Check collision with existing blueprints
+-- Compute world-space AABB for a blueprint given its anchor center position
+local function getBlueprintAABB(anchorRelative, definition)
+	local minOffset, maxOffset = BlueprintDefinitions.GetBounds(definition)
+	local HALF_BLOCK = 2
+	local halfVec = Vector3.new(HALF_BLOCK, HALF_BLOCK, HALF_BLOCK)
+	local bpMin = anchorRelative + minOffset - halfVec
+	local bpMax = anchorRelative + maxOffset + halfVec
+	return bpMin, bpMax
+end
+
+-- Check if blueprint overlaps with existing blueprints
+local function hasCollision(player, anchorRelative, definition)
 	local blueprints = playerBlueprints[player]
-	if blueprints then
-		for _, blueprint in pairs(blueprints) do
-			local bpMin = blueprint.RelativePosition
-			local bpMax = blueprint.RelativePosition + blueprint.Definition.size
+	if not blueprints then return false end
 
-			local newMin = relativePosition
-			local newMax = relativePosition + blueprintSize
+	local newMin, newMax = getBlueprintAABB(anchorRelative, definition)
 
-			-- AABB collision
-			if newMin.X < bpMax.X and newMax.X > bpMin.X and
-			   newMin.Y < bpMax.Y and newMax.Y > bpMin.Y and
-			   newMin.Z < bpMax.Z and newMax.Z > bpMin.Z then
-				return true
-			end
+	for _, blueprint in pairs(blueprints) do
+		if not blueprint.Definition then continue end
+		local bpMin, bpMax = getBlueprintAABB(blueprint.RelativePosition, blueprint.Definition)
+
+		if newMin.X < bpMax.X and newMax.X > bpMin.X and
+		   newMin.Y < bpMax.Y and newMax.Y > bpMin.Y and
+		   newMin.Z < bpMax.Z and newMax.Z > bpMin.Z then
+			return true
 		end
 	end
-
-	-- TODO: Check collision with existing blocks in BuildingService
 
 	return false
 end
@@ -275,7 +280,7 @@ end
 --|| Public Functions ||--
 
 -- Place a new blueprint
-function BlueprintService:PlaceBlueprint(player, position, blueprintType, rotation)
+function BlueprintService:PlaceBlueprint(player, position, blueprintType)
 	print("[BlueprintService] PlaceBlueprint called:", player.Name, blueprintType)
 
 	-- Get blueprint definition
@@ -311,11 +316,7 @@ function BlueprintService:PlaceBlueprint(player, position, blueprintType, rotati
 	end
 	print("[BlueprintService] Bounds check PASSED")
 
-	-- For collision checking, calculate bounding box from anchor
-	local halfAnchorSize = anchorBlockSize / 2
-	local cornerRelative = anchorRelative - halfAnchorSize
-
-	if hasCollision(player, cornerRelative, definition.size) then
+	if hasCollision(player, anchorRelative, definition) then
 		return false, "Overlapping with existing structure"
 	end
 
@@ -369,7 +370,7 @@ function BlueprintService:PlaceBlueprint(player, position, blueprintType, rotati
 			y = anchorRelative.Y,
 			z = anchorRelative.Z,
 		},
-		rotation = rotation or 0,
+		rotation = 0,
 		ownerId = player.UserId,
 		completedAt = 0,
 		filledBlocks = {},
@@ -415,21 +416,18 @@ function BlueprintService:GetBlueprintAtPosition(player, worldPosition)
 	for _, blueprint in pairs(blueprints) do
 		if not blueprint.Definition then continue end
 
-		local bpMin = blueprint.RelativePosition
-		local bpMax = blueprint.RelativePosition + blueprint.Definition.size
+		local bpMin, bpMax = getBlueprintAABB(blueprint.RelativePosition, blueprint.Definition)
 
-		-- Check if position is within blueprint bounds
+		-- Check if position is within blueprint AABB
 		if relativePos.X >= bpMin.X and relativePos.X < bpMax.X and
 		   relativePos.Y >= bpMin.Y and relativePos.Y < bpMax.Y and
 		   relativePos.Z >= bpMin.Z and relativePos.Z < bpMax.Z then
-			-- Calculate offset within blueprint
-			local offset = relativePos - blueprint.RelativePosition
-
-			-- Snap to grid
-			offset = Vector3.new(
-				math.floor(offset.X / GRID_SIZE) * GRID_SIZE,
-				math.floor(offset.Y / GRID_SIZE) * GRID_SIZE,
-				math.floor(offset.Z / GRID_SIZE) * GRID_SIZE
+			-- Calculate offset relative to anchor (round to nearest integer for float safety)
+			local rawOffset = relativePos - blueprint.RelativePosition
+			local offset = Vector3.new(
+				math.round(rawOffset.X),
+				math.round(rawOffset.Y),
+				math.round(rawOffset.Z)
 			)
 
 			return blueprint, offset
@@ -753,7 +751,7 @@ function BlueprintService:RemoveCompletedStructure(player, blueprintId)
 end
 
 -- Place a completed structure from inventory
-function BlueprintService:PlaceStructure(player, position, structureItemName, rotation)
+function BlueprintService:PlaceStructure(player, position, structureItemName)
 	print("[BlueprintService] PlaceStructure called:", player.Name, structureItemName)
 
 	-- Get item config
@@ -792,10 +790,7 @@ function BlueprintService:PlaceStructure(player, position, structureItemName, ro
 		return false, "Outside building area"
 	end
 
-	local halfAnchorSize = anchorBlockSize / 2
-	local cornerRelative = anchorRelative - halfAnchorSize
-
-	if hasCollision(player, cornerRelative, definition.size) then
+	if hasCollision(player, anchorRelative, definition) then
 		return false, "Overlapping with existing structure"
 	end
 
@@ -837,7 +832,7 @@ function BlueprintService:PlaceStructure(player, position, structureItemName, ro
 			y = anchorRelative.Y,
 			z = anchorRelative.Z,
 		},
-		rotation = rotation or 0,
+		rotation = 0,
 		ownerId = player.UserId,
 		completedAt = os.time(), -- Already completed
 		filledBlocks = {}, -- No individual blocks
@@ -899,8 +894,8 @@ end
 
 --|| Client Functions ||--
 
-function BlueprintService.Client:PlaceBlueprint(player, position, blueprintType, rotation)
-	return self.Server:PlaceBlueprint(player, position, blueprintType, rotation)
+function BlueprintService.Client:PlaceBlueprint(player, position, blueprintType)
+	return self.Server:PlaceBlueprint(player, position, blueprintType)
 end
 
 function BlueprintService.Client:RemoveBlueprint(player, blueprintId)
@@ -915,8 +910,8 @@ function BlueprintService.Client:RemoveCompletedStructure(player, blueprintId)
 	return self.Server:RemoveCompletedStructure(player, blueprintId)
 end
 
-function BlueprintService.Client:PlaceStructure(player, position, structureItemName, rotation)
-	return self.Server:PlaceStructure(player, position, structureItemName, rotation)
+function BlueprintService.Client:PlaceStructure(player, position, structureItemName)
+	return self.Server:PlaceStructure(player, position, structureItemName)
 end
 
 function BlueprintService.Client:GetPlayerBlueprints(player)
@@ -957,11 +952,7 @@ function BlueprintService.Client:ValidateBlueprintPlacement(player, position, bl
 		return false, "Outside building area"
 	end
 
-	-- For collision checking, calculate bounding box from anchor
-	local halfAnchorSize = anchorBlockSize / 2
-	local cornerRelative = anchorRelative - halfAnchorSize
-
-	if hasCollision(player, cornerRelative, definition.size) then
+	if hasCollision(player, anchorRelative, definition) then
 		return false, "Overlapping with existing structure"
 	end
 

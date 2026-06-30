@@ -1,21 +1,20 @@
 --[=[
 	DevItemPicker Component
-	Dev-only panel that appears to the left of the backpack.
+	Dev-only panel that appears to the left of any parent panel.
 	Shows all items in the game and lets devs give themselves any item on click.
+	Registers itself as a drop zone so dragged items can be "trashed" onto it.
 ]=]
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterPlayer = game:GetService("StarterPlayer")
-local RunService = game:GetService("RunService")
 
 local Roact = require(ReplicatedStorage.Packages.Roact)
 local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
 local Knit = require(ReplicatedStorage.Packages.Knit)
 
 local Components = StarterPlayer.StarterPlayerScripts.Client.Roact.Components
-local StudBackground = require(Components.Global.StudBackground)
 local PanelFrame = require(Components.Frames.PanelFrame)
+local ItemSlot = require(Components.Global.ItemSlot)
 
 local DEFAULT_ITEM_ICON = "rbxassetid://95016840981722"
 
@@ -23,19 +22,6 @@ local ItemData = require(ReplicatedStorage.Shared.Data.Items)
 local Images = require(ReplicatedStorage.Shared.Data.Images)
 
 local Config = require(script.Config)
-
-local function isDev()
-	if RunService:IsStudio() then
-		return true
-	end
-	local player = Players.LocalPlayer
-	for _, id in ipairs(Config.DevUserIds) do
-		if player.UserId == id then
-			return true
-		end
-	end
-	return false
-end
 
 local sortedItems
 local function getSortedItems()
@@ -58,10 +44,6 @@ local function getSortedItems()
 end
 
 local function DevItemPicker(props, hooks)
-	if not isDev() then
-		return Roact.createElement("Frame", { Visible = false })
-	end
-
 	local frameRef = hooks.useValue(Roact.createRef())
 
 	hooks.useEffect(function()
@@ -96,52 +78,22 @@ local function DevItemPicker(props, hooks)
 
 	for i, itemConfig in ipairs(items) do
 		local itemImage = Images[itemConfig.name]
+		local resolvedImage = (itemImage and itemImage ~= "rbxassetid://0") and itemImage or DEFAULT_ITEM_ICON
 
-		gridChildren["Item_" .. itemConfig.name] = Roact.createElement("Frame", {
+		gridChildren["Item_" .. itemConfig.name] = Roact.createElement(ItemSlot, {
 			Name = itemConfig.name,
-			BackgroundTransparency = 1,
+			Image = resolvedImage,
+			ZIndex = 13,
 			LayoutOrder = i,
-		}, {
-			UIAspectRatioConstraint = Roact.createElement("UIAspectRatioConstraint", {
-				AspectRatio = 1,
-			}),
-
-			UICorner = Roact.createElement("UICorner", {
-				CornerRadius = Config.SlotCornerRadius,
-			}),
-
-			UIStroke = Roact.createElement("UIStroke", {
-				Color = Config.SlotStrokeColor,
-				Thickness = Config.SlotStrokeThickness,
-				Transparency = Config.SlotStrokeTransparency,
-			}),
-
-			SlotBackground = Roact.createElement(StudBackground, {
-				ZIndex = 14,
-				BackgroundColor = Config.SlotBackgroundColor,
-				ImageTransparency = Config.SlotStudImageTransparency,
-				CornerRadius = Config.SlotCornerRadius,
-			}),
-
-			ItemImage = Roact.createElement("ImageLabel", {
-				Size = UDim2.fromScale(0.75, 0.75),
-				Position = UDim2.fromScale(0.5, 0.5),
-				AnchorPoint = Vector2.new(0.5, 0.5),
-				BackgroundTransparency = 1,
-				Image = (itemImage and itemImage ~= "rbxassetid://0") and itemImage or DEFAULT_ITEM_ICON,
-				ScaleType = Enum.ScaleType.Fit,
-				ZIndex = 15,
-			}),
-
-			Button = Roact.createElement("TextButton", {
-				Size = UDim2.fromScale(1, 1),
-				BackgroundTransparency = 1,
-				Text = "",
-				ZIndex = 16,
-				[Roact.Event.MouseButton1Click] = function()
-					handleItemClick(itemConfig.name)
-				end,
-			}),
+			CornerRadius = Config.SlotCornerRadius,
+			BackgroundColor = Config.SlotBackgroundColor,
+			StudImageTransparency = Config.SlotStudImageTransparency,
+			StrokeColor = Config.SlotStrokeColor,
+			StrokeThickness = Config.SlotStrokeThickness,
+			StrokeTransparency = Config.SlotStrokeTransparency,
+			OnClick = function()
+				handleItemClick(itemConfig.name)
+			end,
 		})
 	end
 

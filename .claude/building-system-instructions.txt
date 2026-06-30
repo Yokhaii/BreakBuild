@@ -182,9 +182,8 @@ VALIDATION ORDER:
 BLUEPRINT DEFINITION (e.g., Workbench.lua):
   {
     id = "Workbench",
-    size = Vector3.new(4, 4, 8),
     blocks = {
-      { offset = Vector3.new(0, 0, 0), blockType = "SprucePlank" },
+      { offset = Vector3.new(0, 0, 0), blockType = "SprucePlank" },  -- Anchor
       { offset = Vector3.new(2, 0, 0), blockType = "SprucePlank" },
       ...
     },
@@ -192,6 +191,9 @@ BLUEPRINT DEFINITION (e.g., Workbench.lua):
     completedModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.Workbench",
     completedItemName = "CompletedWorkbench",
   }
+
+  Note: Offsets can be negative (anchor can be any block, not just a corner).
+  Bounds are computed dynamically from the blocks array via Blueprints.GetBounds().
 
 PLACEMENT FLOW:
   1. Player equips Blueprint item (e.g., "WorkbenchBlueprint")

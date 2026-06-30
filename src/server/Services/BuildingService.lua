@@ -536,7 +536,9 @@ function BuildingService:CanPlaceBlock(player: Player, position: Vector3, itemNa
 		return false, "Overlapping with existing block"
 	end
 
-	-- Check collision with ALL blueprint slots (even if block center is outside blueprint bounds)
+	-- Check collision with blueprint slots
+	-- A block is allowed if it lands exactly on one of the blueprint's slots.
+	-- If it overlaps slots without matching any, it's rejected.
 	if BlueprintService then
 		local _, area, _ = getBuildingZone()
 		if area then
@@ -544,33 +546,36 @@ function BuildingService:CanPlaceBlock(player: Player, position: Vector3, itemNa
 			local areaOrigin = Vector3.new(areaPosition.X, areaPosition.Y - 32, areaPosition.Z)
 			local halfSize = blockSize / 2
 
-			-- Get all player blueprints and check each slot for collision
 			local playerBlueprints = BlueprintService:GetPlayerBlueprints(player)
 			for _, blueprint in pairs(playerBlueprints) do
 				if blueprint.Definition and blueprint.Definition.blocks then
+					local matchesAnySlot = false
+					local overlapsAnySlot = false
+
 					for _, blockReq in ipairs(blueprint.Definition.blocks) do
 						local slotBlockConfig = ItemData.GetItem(blockReq.blockType)
 						local slotBlockSize = slotBlockConfig and slotBlockConfig.blockSize or Vector3.new(4, 4, 4)
 						local slotHalfSize = slotBlockSize / 2
 
-						-- Calculate world position of this slot (center of the slot)
-						-- RelativePosition is anchor center, offset is relative to anchor center
 						local slotWorldPos = areaOrigin + blueprint.RelativePosition + blockReq.offset
 
 						-- AABB collision between new block and this slot
 						if math.abs(snappedPos.X - slotWorldPos.X) < (halfSize.X + slotHalfSize.X) and
 						   math.abs(snappedPos.Y - slotWorldPos.Y) < (halfSize.Y + slotHalfSize.Y) and
 						   math.abs(snappedPos.Z - slotWorldPos.Z) < (halfSize.Z + slotHalfSize.Z) then
-							-- Check if this is an exact match (same position and same size)
-							local isExactMatch = (snappedPos - slotWorldPos).Magnitude < 0.5 and
-							                     blockSize.X == slotBlockSize.X and
-							                     blockSize.Y == slotBlockSize.Y and
-							                     blockSize.Z == slotBlockSize.Z
+							overlapsAnySlot = true
 
-							if not isExactMatch then
-								return false, "Block would overlap with blueprint slot"
+							-- Check if this is an exact positional match for this slot
+							if (snappedPos - slotWorldPos).Magnitude < 0.5 then
+								matchesAnySlot = true
+								break
 							end
 						end
+					end
+
+					-- Block overlaps blueprint slots but doesn't match any slot position
+					if overlapsAnySlot and not matchesAnySlot then
+						return false, "Block would overlap with blueprint slot"
 					end
 				end
 			end
@@ -701,8 +706,11 @@ function BuildingService:PlaceBlock(player: Player, position: Vector3, itemName:
 	if BlueprintService then
 		local blueprint, offset = BlueprintService:GetBlueprintAtPosition(player, snappedPos)
 		if blueprint then
+			print("[BuildingService] Block inside blueprint:", blueprint.Id, "offset:", offset)
 			-- Notify blueprint system (validates correct/wrong block, tracks progress)
 			BlueprintService:OnBlockPlacedInBlueprint(player, blueprint.Id, offset, itemName, blockId)
+		else
+			print("[BuildingService] Block NOT inside any blueprint. World pos:", snappedPos)
 		end
 	end
 

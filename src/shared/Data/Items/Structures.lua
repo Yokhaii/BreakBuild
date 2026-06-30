@@ -30,6 +30,20 @@ local Structures = {
 		blueprintType = "Furnace",
 		placementModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.Furnace",
 	},
+
+	CompletedStoneCutter = {
+		name = "CompletedStoneCutter",
+		displayName = "Stone Cutter",
+		type = "Structure",
+		stackable = false,
+		maxStack = 1,
+		dropable = true,
+		description = "A completed stone cutter. Place it to cut stone.",
+		modelPath = "Assets.Items.CompletedStoneCutter",
+		isStructure = true,
+		blueprintType = "StoneCutter",
+		placementModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.StoneCutter",
+	},
 }
 
 return Structures

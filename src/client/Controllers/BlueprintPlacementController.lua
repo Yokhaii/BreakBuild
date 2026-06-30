@@ -35,7 +35,6 @@ local PREVIEW_TRANSPARENCY = 0.5
 local GRID_SIZE = 2 -- Same as BuildingController (2-stud grid)
 local HIGHLIGHT_VALID_COLOR = Color3.fromRGB(100, 200, 255) -- Blue for valid
 local HIGHLIGHT_INVALID_COLOR = Color3.fromRGB(255, 80, 80) -- Red for invalid
-local ROTATION_STEP = 90 -- Degrees per rotation press (for future use)
 local DEFAULT_BLOCK_SIZE = Vector3.new(4, 4, 4) -- Default anchor block size
 
 -- Services (to be initialized)
@@ -50,7 +49,6 @@ local anchorBlockSize = DEFAULT_BLOCK_SIZE -- Size of the anchor block
 local previewModel = nil
 local previewHighlight = nil
 local currentPosition = nil -- Position of the anchor (PrimaryPart)
-local currentRotation = 0 -- Reserved for future rotation support (0, 90, 180, 270)
 local isValidPlacement = false
 
 -- Structure placement state (for completed blueprints)
@@ -353,7 +351,6 @@ local function updatePreview()
 
 	-- Update preview position using PrimaryPart as anchor
 	if previewModel.PrimaryPart then
-		-- For now, no rotation (currentRotation = 0)
 		previewModel:SetPrimaryPartCFrame(CFrame.new(clampedPosition))
 	end
 
@@ -415,7 +412,6 @@ local function startPlacementMode(blueprintType, forStructure, structureItemName
 	placementMode = true
 	currentBlueprintType = blueprintType
 	currentDefinition = definition
-	currentRotation = 0 -- Reserved for future rotation support
 	isStructurePlacement = forStructure or false
 	currentStructureItemName = structureItemName
 
@@ -448,7 +444,6 @@ local function stopPlacementMode()
 	currentBlueprintType = nil
 	currentDefinition = nil
 	currentPosition = nil
-	currentRotation = 0
 	isValidPlacement = false
 	anchorBlockSize = DEFAULT_BLOCK_SIZE
 	isStructurePlacement = false
@@ -517,7 +512,7 @@ local function onMouseClick()
 
 	if isStructurePlacement then
 		-- Place completed structure via server
-		BlueprintService:PlaceStructure(currentPosition, currentStructureItemName, currentRotation)
+		BlueprintService:PlaceStructure(currentPosition, currentStructureItemName)
 			:andThen(function(success, structureIdOrError)
 				if success then
 					print("[BlueprintPlacementController] Structure placed:", structureIdOrError)
@@ -536,7 +531,7 @@ local function onMouseClick()
 			end)
 	else
 		-- Place blueprint via server
-		BlueprintService:PlaceBlueprint(currentPosition, currentBlueprintType, currentRotation)
+		BlueprintService:PlaceBlueprint(currentPosition, currentBlueprintType)
 			:andThen(function(success, blueprintIdOrError)
 				if success then
 					print("[BlueprintPlacementController] Blueprint placed:", blueprintIdOrError)
@@ -556,17 +551,6 @@ local function onMouseClick()
 	end
 end
 
--- Handle rotation input (reserved for future use)
--- Currently rotation is disabled, but the infrastructure is ready
-local function onRotateBlueprint()
-	if not placementMode then return end
-
-	-- TODO: Enable rotation when ready
-	-- currentRotation = (currentRotation + ROTATION_STEP) % 360
-	-- print("[BlueprintPlacementController] Rotated to:", currentRotation)
-	print("[BlueprintPlacementController] Rotation is not yet supported")
-end
-
 -- Handle input
 local function onInputBegan(input, gameProcessed)
 	if gameProcessed then return end
@@ -577,13 +561,6 @@ local function onInputBegan(input, gameProcessed)
 			onMouseClick()
 		end
 	end
-
-	-- R key to rotate (disabled for now)
-	-- if input.KeyCode == Enum.KeyCode.R then
-	-- 	if placementMode then
-	-- 		onRotateBlueprint()
-	-- 	end
-	-- end
 end
 
 -- Create client blueprint instance based on type (loads specific class if available)

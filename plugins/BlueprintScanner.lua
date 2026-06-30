@@ -11,18 +11,30 @@
 
 	USAGE:
 	1. Build your blueprint in the BuildingArea (only the blueprint blocks)
-	2. Click "Scan Blueprint" in the toolbar
-	3. Enter the blueprint name when prompted
+	2. Select the block you want to use as the ANCHOR (PrimaryPart) in the viewport
+	3. Click "Scan Blueprint" in the toolbar
 	4. The definition will be printed to Output and copied to clipboard
+
+	The anchor can be ANY block in the blueprint (not just a corner).
+	Offsets will be calculated relative to the selected anchor and may be negative.
+
+	MIXED BLOCK SIZES (4x4x4 and 2x2x2):
+	The plugin automatically corrects offset parity so every slot lands on a
+	position that the game's snap system can reach:
+	  - 4x4x4 blocks snap to EVEN world coordinates  (2, 4, 6 ...)
+	  - 2x2x2 blocks snap to ODD  world coordinates  (1, 3, 5 ...)
+	  Rule: offset = target_world - anchor_world
+	    same-size pair  → offset must be EVEN
+	    mixed-size pair → offset must be ODD  (on every axis)
+	A warning is printed if any raw offset had to be corrected, which means the
+	blocks in the BuildingArea were not on the proper snapped grid.
 ]]
 
 local Selection = game:GetService("Selection")
-local ChangeHistoryService = game:GetService("ChangeHistoryService")
 local StudioService = game:GetService("StudioService")
 
 -- Constants
-local DEFAULT_GRID_SIZE = 4
-local SMALL_GRID_SIZE = 2  -- For 2x2x2 blocks like SprucePlank
+local GRID_SIZE = 2 -- matches BuildingService / BlueprintService
 local PLUGIN_NAME = "Blueprint Scanner"
 
 -- Create toolbar and button
@@ -30,7 +42,7 @@ local toolbar = plugin:CreateToolbar(PLUGIN_NAME)
 local scanButton = toolbar:CreateButton(
 	"Scan Blueprint",
 	"Scan the BuildingArea and generate blueprint definition",
-	"rbxassetid://6031071053" -- Blueprint icon
+	"rbxassetid://6031071053"
 )
 
 -- Find BuildingArea in workspace
@@ -60,19 +72,24 @@ local function getBlockPosition(block)
 	return nil
 end
 
+-- Get the size of a block (handles both Models and Parts)
+local function getBlockSize(block)
+	if block:IsA("Model") and block.PrimaryPart then
+		return block.PrimaryPart.Size
+	elseif block:IsA("BasePart") then
+		return block.Size
+	end
+	return Vector3.new(4, 4, 4)
+end
+
 -- Get block type from the block
--- Block names follow the pattern: "ItemName_Placed"
 local function getBlockType(block)
-	-- Check for ItemName StringValue first (if added)
 	local itemNameValue = block:FindFirstChild("ItemName")
 	if itemNameValue and itemNameValue:IsA("StringValue") then
 		return itemNameValue.Value
 	end
 
-	-- Extract from block name (format: "ItemName_Placed")
 	local name = block.Name
-
-	-- Remove common suffixes
 	name = name:gsub("_Placed$", "")
 	name = name:gsub("_Block$", "")
 
@@ -82,24 +99,45 @@ end
 -- Get the building area origin (floor level)
 local function getBuildingAreaOrigin(buildingArea)
 	local areaPosition = buildingArea.Position
-	-- Origin is at floor level (Y - 32 for a 64-stud tall area)
 	return Vector3.new(areaPosition.X, areaPosition.Y - 32, areaPosition.Z)
 end
 
+-- Snap one axis of an absolute relative position to the game grid.
+-- Mirrors BuildingService.snapToGridForBlockSize exactly.
+-- Returns: snapped value, wasCorrected boolean
+local function snapAbsoluteAxis(value, halfBlockSize)
+	local snapped
+	if halfBlockSize % GRID_SIZE == 0 then
+		-- 4x4x4 blocks → even positions: 2, 4, 6 ...
+		snapped = math.round(value / GRID_SIZE) * GRID_SIZE
+	else
+		-- 2x2x2 blocks → odd positions: 1, 3, 5 ...
+		local gridHalf = GRID_SIZE / 2
+		snapped = math.round((value - gridHalf) / GRID_SIZE) * GRID_SIZE + gridHalf
+	end
+	local wasCorrected = math.abs(value - snapped) > 0.01
+	return snapped, wasCorrected
+end
+
+-- Snap an absolute relative position to the game grid for a given block size.
+local function snapPositionToGrid(pos, blockSize)
+	local halfSize = blockSize / 2
+	local sx, cx = snapAbsoluteAxis(pos.X, halfSize.X)
+	local sy, cy = snapAbsoluteAxis(pos.Y, halfSize.Y)
+	local sz, cz = snapAbsoluteAxis(pos.Z, halfSize.Z)
+	return Vector3.new(sx, sy, sz), (cx or cy or cz)
+end
+
 -- Scan all placed blocks in the BuildingZone
--- Only scans direct children that have a BlockId (actual placed blocks)
 local function scanBlocks(buildingZone, buildingArea)
 	local blocks = {}
 	local areaOrigin = getBuildingAreaOrigin(buildingArea)
 
 	for _, child in ipairs(buildingZone:GetChildren()) do
-		-- Skip the BuildingArea itself
 		if child == buildingArea then
 			continue
 		end
 
-		-- Only scan items that have a BlockId (actual placed blocks)
-		-- This filters out WallLimit, Floor, decorative parts inside models, etc.
 		local blockIdValue = child:FindFirstChild("BlockId")
 		if not blockIdValue or not blockIdValue:IsA("StringValue") then
 			continue
@@ -108,24 +146,29 @@ local function scanBlocks(buildingZone, buildingArea)
 		local position = getBlockPosition(child)
 		if position then
 			local blockType = getBlockType(child)
+			local blockSize = getBlockSize(child)
+			local rawRelative = position - areaOrigin
 
-			-- Calculate relative position from area origin
-			local relativePos = position - areaOrigin
-
-			-- Round to nearest 2 studs to preserve differences between 2x2x2 blocks
-			-- This works for both 4x4x4 (centers at 2,6,10...) and 2x2x2 (centers at 1,3,5...)
-			local gridX = math.round(relativePos.X / SMALL_GRID_SIZE) * SMALL_GRID_SIZE
-			local gridY = math.round(relativePos.Y / SMALL_GRID_SIZE) * SMALL_GRID_SIZE
-			local gridZ = math.round(relativePos.Z / SMALL_GRID_SIZE) * SMALL_GRID_SIZE
+			-- Snap the absolute relative position to the same grid the game uses.
+			-- This ensures offsets computed later match what BuildingService records.
+			local snappedPos, wasCorrected = snapPositionToGrid(rawRelative, blockSize)
+			if wasCorrected then
+				warn(string.format(
+					"[BlueprintScanner] Block '%s' (%dx%dx%d) was off-grid in Studio: " ..
+					"raw (%.2f, %.2f, %.2f) → snapped (%d, %d, %d). " ..
+					"Move it onto the correct grid before scanning.",
+					blockType,
+					blockSize.X, blockSize.Y, blockSize.Z,
+					rawRelative.X, rawRelative.Y, rawRelative.Z,
+					snappedPos.X, snappedPos.Y, snappedPos.Z
+				))
+			end
 
 			table.insert(blocks, {
-				position = Vector3.new(gridX, gridY, gridZ),
+				position = snappedPos,
 				blockType = blockType,
+				size = blockSize,
 				instance = child,
-				-- Store raw positions for accurate anchor detection
-				rawX = relativePos.X,
-				rawY = relativePos.Y,
-				rawZ = relativePos.Z,
 			})
 		end
 	end
@@ -133,128 +176,101 @@ local function scanBlocks(buildingZone, buildingArea)
 	return blocks
 end
 
--- Find the anchor block (ground level, leftmost when facing +Z)
--- Uses raw world positions for accurate ground detection
-local function findAnchorBlock(blocks, buildingArea)
-	if #blocks == 0 then
+-- Get the user-selected anchor block from the Selection service
+local function getSelectedAnchor(blocks)
+	local selected = Selection:Get()
+	if not selected or #selected == 0 then
+		warn("[BlueprintScanner] No block selected! Select the desired anchor block in the viewport first.")
 		return nil
 	end
 
-	-- Get the actual floor level (top of ground/grass)
-	local areaOrigin = getBuildingAreaOrigin(buildingArea)
-	local floorY = areaOrigin.Y
+	if #selected > 1 then
+		warn("[BlueprintScanner] Multiple objects selected. Select exactly ONE block as anchor.")
+		return nil
+	end
 
-	-- Find the block with the lowest bottom edge (closest to the floor)
-	-- Block bottom = center Y - half height (assuming 4 stud blocks, half = 2)
-	-- We use rawY which is the actual world Y position
-	local minBottomY = math.huge
+	local selectedInstance = selected[1]
+
+	-- Direct instance match
 	for _, block in ipairs(blocks) do
-		-- Estimate block bottom (center - 2 for standard blocks)
-		-- Using rawY stored during scan
-		local bottomY = block.rawY - 2
-		if bottomY < minBottomY then
-			minBottomY = bottomY
+		if block.instance == selectedInstance then
+			return block
 		end
 	end
 
-	-- Filter to blocks at ground level (within small tolerance)
-	local groundBlocks = {}
-	local tolerance = 1 -- 1 stud tolerance for different block sizes
-	for _, block in ipairs(blocks) do
-		local bottomY = block.rawY - 2
-		if math.abs(bottomY - minBottomY) <= tolerance then
-			table.insert(groundBlocks, block)
+	-- Position-based match (in case of model vs part selection)
+	local selectedPos = getBlockPosition(selectedInstance)
+	if selectedPos then
+		for _, block in ipairs(blocks) do
+			local blockPos = getBlockPosition(block.instance)
+			if blockPos and (blockPos - selectedPos).Magnitude < 1 then
+				return block
+			end
 		end
 	end
 
-	if #groundBlocks == 0 then
-		groundBlocks = blocks -- Fallback to all blocks
-	end
-
-	-- Find the leftmost (minimum X) among ground blocks
-	-- If tie, pick the one with minimum Z (front)
-	local anchor = groundBlocks[1]
-	for _, block in ipairs(groundBlocks) do
-		if block.rawX < anchor.rawX then
-			anchor = block
-		elseif block.rawX == anchor.rawX and block.rawZ < anchor.rawZ then
-			anchor = block
-		end
-	end
-
-	return anchor
+	warn("[BlueprintScanner] Selected object is not a scanned block in the BuildingZone.")
+	warn("[BlueprintScanner] Make sure the selected block has a BlockId StringValue.")
+	return nil
 end
 
--- Calculate offsets relative to anchor
+-- Calculate offsets relative to anchor.
+-- Both anchor and block positions have already been snapped to the game grid
+-- in scanBlocks(), so simple integer subtraction is all that's needed.
 local function calculateOffsets(blocks, anchor)
 	local offsets = {}
 
 	for _, block in ipairs(blocks) do
-		local offset = block.position - anchor.position
+		local offset   = block.position - anchor.position
+		local blockSize = block.size or Vector3.new(4, 4, 4)
+
 		table.insert(offsets, {
-			offset = offset,
+			offset    = Vector3.new(math.round(offset.X), math.round(offset.Y), math.round(offset.Z)),
 			blockType = block.blockType,
+			blockSize = blockSize,
 		})
 	end
 
 	-- Sort by Y, then X, then Z for consistent output
 	table.sort(offsets, function(a, b)
-		if a.offset.Y ~= b.offset.Y then
-			return a.offset.Y < b.offset.Y
-		elseif a.offset.X ~= b.offset.X then
-			return a.offset.X < b.offset.X
-		else
-			return a.offset.Z < b.offset.Z
-		end
+		if a.offset.Y ~= b.offset.Y then return a.offset.Y < b.offset.Y end
+		if a.offset.X ~= b.offset.X then return a.offset.X < b.offset.X end
+		return a.offset.Z < b.offset.Z
 	end)
 
 	return offsets
 end
 
--- Calculate the total size of the blueprint
-local function calculateSize(offsets)
-	local maxX, maxY, maxZ = 0, 0, 0
-
-	for _, data in ipairs(offsets) do
-		maxX = math.max(maxX, data.offset.X)
-		maxY = math.max(maxY, data.offset.Y)
-		maxZ = math.max(maxZ, data.offset.Z)
-	end
-
-	-- Add one block size to get total dimensions (assuming largest block size)
-	return Vector3.new(maxX + DEFAULT_GRID_SIZE, maxY + DEFAULT_GRID_SIZE, maxZ + DEFAULT_GRID_SIZE)
-end
-
 -- Generate the blueprint definition as a standalone file
-local function generateDefinition(name, offsets, size)
+local function generateDefinition(name, offsets, anchorSize)
 	local lines = {}
 
-	-- File header comment
 	table.insert(lines, "--[[")
 	table.insert(lines, string.format("\t%s Blueprint Definition", name))
 	table.insert(lines, "\tGenerated by Blueprint Scanner Plugin")
 	table.insert(lines, "")
-	table.insert(lines, "\tAnchor: Bottom-left-front block (PrimaryPart of the model)")
+	table.insert(lines, "\tAnchor: User-selected block (PrimaryPart of the model)")
 	table.insert(lines, "\tAll offsets are relative to the anchor position.")
 	table.insert(lines, "]]")
 	table.insert(lines, "")
 
-	-- Definition table
 	table.insert(lines, string.format("local %s = {", name))
-	table.insert(lines, string.format('\tid = "%s",', name:lower()))
+	table.insert(lines, string.format('\tid = "%s",', name))
 	table.insert(lines, string.format('\tname = "%s",', name))
 	table.insert(lines, string.format('\tdisplayName = "%s",', name))
 	table.insert(lines, '\tdescription = "Description here.",')
-	table.insert(lines, string.format('\tsize = Vector3.new(%d, %d, %d),', size.X, size.Y, size.Z))
 	table.insert(lines, "")
 	table.insert(lines, "\t-- Block requirements: offset is relative to anchor (PrimaryPart position)")
+	table.insert(lines, "\t-- Mixed block sizes: 4x4x4 slots use even offsets, 2x2x2 slots use odd offsets")
 
-	-- Blocks
 	table.insert(lines, '\tblocks = {')
-	for i, data in ipairs(offsets) do
-		local comment = ""
+	for _, data in ipairs(offsets) do
+		local sizeTag = string.format("%dx%dx%d", data.blockSize.X, data.blockSize.Y, data.blockSize.Z)
+		local comment
 		if data.offset == Vector3.new(0, 0, 0) then
-			comment = " -- Anchor block"
+			comment = string.format(" -- Anchor block (%s)", sizeTag)
+		else
+			comment = string.format(" -- %s", sizeTag)
 		end
 		table.insert(lines, string.format(
 			'\t\t{ offset = Vector3.new(%d, %d, %d), blockType = "%s" },%s',
@@ -266,8 +282,9 @@ local function generateDefinition(name, offsets, size)
 	table.insert(lines, '\t},')
 	table.insert(lines, "")
 
-	-- Footer
 	table.insert(lines, string.format('\tmodelPath = "ReplicatedStorage.Assets.Blueprints.%s",', name))
+	table.insert(lines, string.format('\tcompletedModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.%s",', name))
+	table.insert(lines, string.format('\tcompletedItemName = "Completed%s",', name))
 	table.insert(lines, string.format('\tclientClass = "%s",', name))
 	table.insert(lines, string.format('\tserverClass = "%s",', name))
 	table.insert(lines, '\tmaxQuantity = 1,')
@@ -281,7 +298,6 @@ end
 
 -- Highlight the anchor block
 local function highlightAnchor(anchor)
-	-- Remove old highlight
 	local oldHighlight = workspace:FindFirstChild("BlueprintScannerHighlight")
 	if oldHighlight then
 		oldHighlight:Destroy()
@@ -300,7 +316,6 @@ local function highlightAnchor(anchor)
 	highlight.Adornee = anchor.instance
 	highlight.Parent = workspace
 
-	-- Auto-remove after 5 seconds
 	task.delay(5, function()
 		if highlight and highlight.Parent then
 			highlight:Destroy()
@@ -310,7 +325,6 @@ end
 
 -- Main scan function
 local function scanBlueprint()
-	-- Find BuildingArea
 	local buildingArea, buildingZone = findBuildingArea()
 	if not buildingArea then
 		warn("[BlueprintScanner] Could not find BuildingArea")
@@ -326,32 +340,36 @@ local function scanBlueprint()
 
 	print("[BlueprintScanner] Found", #blocks, "blocks")
 
-	-- Find anchor (ground level, leftmost)
-	local anchor = findAnchorBlock(blocks, buildingArea)
+	-- Get user-selected anchor
+	local anchor = getSelectedAnchor(blocks)
 	if not anchor then
-		warn("[BlueprintScanner] Could not determine anchor block")
 		return
 	end
 
-	print("[BlueprintScanner] Anchor block:", anchor.blockType)
-	print("[BlueprintScanner] Anchor grid position:", anchor.position)
-	print("[BlueprintScanner] Anchor raw position (relative): X=", anchor.rawX, "Y=", anchor.rawY, "Z=", anchor.rawZ)
+	print(string.format(
+		"[BlueprintScanner] Anchor: %s (size %dx%dx%d) at relative pos (%d, %d, %d)",
+		anchor.blockType,
+		anchor.size.X, anchor.size.Y, anchor.size.Z,
+		anchor.position.X, anchor.position.Y, anchor.position.Z
+	))
 	highlightAnchor(anchor)
 
-	-- Calculate offsets
+	-- Calculate offsets relative to anchor (with parity correction for mixed block sizes)
 	local offsets = calculateOffsets(blocks, anchor)
 
-	-- Calculate size
-	local size = calculateSize(offsets)
-	print("[BlueprintScanner] Blueprint size:", size)
-
-	-- Prompt for name
-	local name = "NewBlueprint"
-	-- Note: Studio plugins can't show input dialogs easily, so we use a default
-	-- The user can change it in the output
+	-- Print per-block summary
+	for _, data in ipairs(offsets) do
+		print(string.format(
+			"[BlueprintScanner]   %s (%dx%dx%d) offset (%d, %d, %d)",
+			data.blockType,
+			data.blockSize.X, data.blockSize.Y, data.blockSize.Z,
+			data.offset.X, data.offset.Y, data.offset.Z
+		))
+	end
 
 	-- Generate definition
-	local definition = generateDefinition(name, offsets, size)
+	local name = "NewBlueprint"
+	local definition = generateDefinition(name, offsets, anchor.size)
 
 	-- Print to output
 	print("\n" .. string.rep("=", 60))
@@ -363,7 +381,7 @@ local function scanBlueprint()
 	print(definition)
 	print(string.rep("=", 60))
 
-	-- Try to copy to clipboard (may not work in all cases)
+	-- Try to copy to clipboard
 	pcall(function()
 		StudioService:CopyToClipboard(definition)
 		print("[BlueprintScanner] Definition copied to clipboard!")
@@ -376,10 +394,11 @@ end
 -- Connect button
 scanButton.Click:Connect(function()
 	print("[BlueprintScanner] Scanning BuildingArea...")
+	print("[BlueprintScanner] Using selected block as anchor...")
 	local success, err = pcall(scanBlueprint)
 	if not success then
 		warn("[BlueprintScanner] Error:", err)
 	end
 end)
 
-print("[BlueprintScanner] Plugin loaded! Click 'Scan Blueprint' to scan your BuildingArea.")
+print("[BlueprintScanner] Plugin loaded! Select anchor block, then click 'Scan Blueprint'.")

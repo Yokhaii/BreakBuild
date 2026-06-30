@@ -20,13 +20,8 @@ local function HUD(_, hooks)
 		return state.UIReducer
 	end)
 
-	local isVisible = uiState.CurrentFrame == "HUD"
+	local isVisible = true
 
-	if not isVisible then
-		return Roact.createElement("Frame", {
-			Visible = false,
-		})
-	end
 
 	return Roact.createElement("Frame", {
 		Name = "HUD",
@@ -35,6 +30,7 @@ local function HUD(_, hooks)
 		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
+		Visible = isVisible
 	}, {
 		Hotbar = Roact.createElement(Hotbar),
 		CycleTimer = Roact.createElement(CycleTimer),

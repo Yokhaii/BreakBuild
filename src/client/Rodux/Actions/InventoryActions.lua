@@ -39,6 +39,12 @@ InventoryActions.setBackpackOpen = Rodux.makeActionCreator("setBackpackOpen", fu
 	}
 end)
 
+InventoryActions.setDevPickerOpen = Rodux.makeActionCreator("setDevPickerOpen", function(isOpen)
+	return {
+		isOpen = isOpen,
+	}
+end)
+
 InventoryActions.swapGridSlots = Rodux.makeActionCreator("swapGridSlots", function(fromGridIndex, toGridIndex)
 	return {
 		fromGridIndex = fromGridIndex,

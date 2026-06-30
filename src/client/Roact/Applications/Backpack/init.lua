@@ -11,12 +11,17 @@ local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
 local RoduxHooks = require(ReplicatedStorage.Packages.Roduxhooks)
 local Knit = require(ReplicatedStorage.Packages.Knit)
 
-local Components = StarterPlayer.StarterPlayerScripts.Client.Roact.Components
+local Client = StarterPlayer.StarterPlayerScripts.Client
+local Components = Client.Roact.Components
 local StudBackground = require(Components.Global.StudBackground)
 local DarkOverlay = require(Components.Global.DarkOverlay)
+local ItemTooltip = require(Components.Global.ItemTooltip)
 
 local BackpackSlot = require(script.Components.BackpackSlot)
-local DevItemPicker = require(script.Components.DevItemPicker)
+local DevItemPicker = require(Components.Global.DevItemPicker)
+local WorkbenchApplication = require(Client.Roact.Applications.Workbench)
+local StoneCutterApplication = require(Client.Roact.Applications.StoneCutter)
+local FurnaceApplication = require(Client.Roact.Applications.Furnace)
 
 local Config = require(script.Config)
 
@@ -29,12 +34,31 @@ local function Backpack(props, hooks)
 	local hotbar = inventoryState.Hotbar or {}
 	local equippedSlot = inventoryState.EquippedSlot
 	local isOpen = inventoryState.BackpackOpen
+	local isDevPickerOpen = inventoryState.DevPickerOpen
+
+	local currentFrame = RoduxHooks.useSelector(hooks, function(state)
+		return state.UIReducer.CurrentFrame
+	end)
+	local isWorkbenchOpen = currentFrame == "Workbench"
+	local isStoneCutterOpen = currentFrame == "StoneCutter"
+	local isFurnaceOpen = currentFrame == "Furnace"
+
+	local hoveredItemName, setHoveredItemName = hooks.useState(nil)
 
 	if not isOpen then
 		return Roact.createElement("Frame", { Visible = false })
 	end
 
+	local function handleHoverStart(itemName)
+		setHoveredItemName(itemName)
+	end
+
+	local function handleHoverEnd()
+		setHoveredItemName(nil)
+	end
+
 	local function handleDragStart(gridIndex, item)
+		setHoveredItemName(nil)
 		local InventoryController = Knit.GetController("InventoryController")
 		if InventoryController then
 			InventoryController:StartDrag(gridIndex, item)
@@ -68,6 +92,8 @@ local function Backpack(props, hooks)
 			isHotbarSlot = false,
 			isEquipped = false,
 			onDragStart = item and handleDragStart or nil,
+			onHoverStart = item and handleHoverStart or nil,
+			onHoverEnd = handleHoverEnd,
 			LayoutOrder = i,
 		})
 	end
@@ -93,6 +119,8 @@ local function Backpack(props, hooks)
 			isHotbarSlot = true,
 			isEquipped = equippedSlot == i,
 			onDragStart = item and handleDragStart or nil,
+			onHoverStart = item and handleHoverStart or nil,
+			onHoverEnd = handleHoverEnd,
 			LayoutOrder = gridIndex,
 		})
 	end
@@ -112,6 +140,7 @@ local function Backpack(props, hooks)
 			Image = "",
 			AutoButtonColor = false,
 			ZIndex = 11,
+			ClipsDescendants = false,
 			[Roact.Event.MouseButton1Click] = function() end,
 		}, {
 			UIAspectRatioConstraint = Roact.createElement("UIAspectRatioConstraint", {
@@ -170,7 +199,27 @@ local function Backpack(props, hooks)
 				}, hotbarGridChildren),
 			}),
 
-			DevItemPicker = Roact.createElement(DevItemPicker),
+			DevItemPicker = isDevPickerOpen and Roact.createElement(DevItemPicker) or nil,
+
+			Workbench = isWorkbenchOpen and Roact.createElement(WorkbenchApplication, {
+				OnHoverStart = handleHoverStart,
+				OnHoverEnd = handleHoverEnd,
+			}) or nil,
+
+			StoneCutter = isStoneCutterOpen and Roact.createElement(StoneCutterApplication, {
+				OnHoverStart = handleHoverStart,
+				OnHoverEnd = handleHoverEnd,
+			}) or nil,
+
+			Furnace = isFurnaceOpen and Roact.createElement(FurnaceApplication, {
+				OnHoverStart = handleHoverStart,
+				OnHoverEnd = handleHoverEnd,
+			}) or nil,
+		}),
+
+		ItemTooltip = Roact.createElement(ItemTooltip, {
+			ItemName = hoveredItemName,
+			Visible = hoveredItemName ~= nil,
 		}),
 	})
 end

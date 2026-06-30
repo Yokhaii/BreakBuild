@@ -26,6 +26,8 @@ local function BackpackSlot(props, hooks)
 	local isHotbarSlot = props.isHotbarSlot or false
 	local isEquipped = props.isEquipped or false
 	local onDragStart = props.onDragStart
+	local onHoverStart = props.onHoverStart
+	local onHoverEnd = props.onHoverEnd
 	local layoutOrder = props.LayoutOrder or props.index
 
 	local isEmpty = item == nil
@@ -61,8 +63,24 @@ local function BackpackSlot(props, hooks)
 
 	local function handleMouseDown()
 		if isEmpty then return end
+		if onHoverEnd then
+			onHoverEnd()
+		end
 		if onDragStart then
 			onDragStart(gridIndex, item)
+		end
+	end
+
+	local function handleMouseEnter()
+		if isEmpty then return end
+		if onHoverStart then
+			onHoverStart(item.itemName)
+		end
+	end
+
+	local function handleMouseLeave()
+		if onHoverEnd then
+			onHoverEnd()
 		end
 	end
 
@@ -132,6 +150,8 @@ local function BackpackSlot(props, hooks)
 			Text = "",
 			ZIndex = 16,
 			[Roact.Event.MouseButton1Down] = handleMouseDown,
+			[Roact.Event.MouseEnter] = handleMouseEnter,
+			[Roact.Event.MouseLeave] = handleMouseLeave,
 			[Roact.Ref] = buttonRef.value,
 		}),
 	})

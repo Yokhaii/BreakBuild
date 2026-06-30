@@ -24,10 +24,14 @@ local playerGui = player:WaitForChild("PlayerGui")
 local Store = require(StarterPlayer.StarterPlayerScripts.Client.Rodux.Store)
 local Actions = StarterPlayer.StarterPlayerScripts.Client.Rodux.Actions
 local InventoryActions = require(Actions.InventoryActions)
+local UIActions = require(Actions.UIActions)
 
 -- Data
 local ItemData = require(ReplicatedStorage.Shared.Data.Items)
 local Images = require(ReplicatedStorage.Shared.Data.Images)
+
+-- Set once at KnitStart
+local isDevPlayer = false
 
 -- InventoryController
 local InventoryController = Knit.CreateController({
@@ -159,6 +163,19 @@ local function toggleBackpack()
 	end
 
 	Store:dispatch(InventoryActions.setBackpackOpen(newState))
+	Store:dispatch(InventoryActions.setDevPickerOpen(newState and isDevPlayer))
+
+	if not newState then
+		local uiState = Store:getState().UIReducer
+		if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "StoneCutter" then
+			Store:dispatch(UIActions.setCurrentFrame("HUD"))
+		end
+
+		local CraftingController = Knit.GetController("CraftingController")
+		if CraftingController and CraftingController:HasActiveSession() then
+			CraftingController:EndSession()
+		end
+	end
 end
 
 local function onInputBegan(input, gameProcessed)
@@ -283,6 +300,17 @@ function InventoryController:CloseBackpack()
 		cancelDrag()
 	end
 	Store:dispatch(InventoryActions.setBackpackOpen(false))
+	Store:dispatch(InventoryActions.setDevPickerOpen(false))
+
+	local uiState = Store:getState().UIReducer
+	if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "StoneCutter" then
+		Store:dispatch(UIActions.setCurrentFrame("HUD"))
+	end
+
+	local CraftingController = Knit.GetController("CraftingController")
+	if CraftingController and CraftingController:HasActiveSession() then
+		CraftingController:EndSession()
+	end
 end
 
 function InventoryController:GetItemConfig(itemName: string)
@@ -294,8 +322,12 @@ end
 function InventoryController:KnitStart()
 	InventoryService = Knit.GetService("InventoryService")
 
-	UserInputService.InputBegan:Connect(onInputBegan)
-	UserInputService.InputEnded:Connect(onInputEnded)
+	InventoryService:IsDevPlayer():andThen(function(result)
+		isDevPlayer = result
+
+		UserInputService.InputBegan:Connect(onInputBegan)
+		UserInputService.InputEnded:Connect(onInputEnded)
+	end)
 
 	RunService.RenderStepped:Connect(updateDragPosition)
 end

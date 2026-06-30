@@ -10,6 +10,7 @@ local defaultState = {
 	EquippedSlot = nil,
 	HammerAvailable = false,
 	BackpackOpen = false,
+	DevPickerOpen = false,
 }
 
 for i = 1, HOTBAR_SIZE do
@@ -24,6 +25,7 @@ local InventoryReducer = Rodux.createReducer(defaultState, {
 			EquippedSlot = action.inventory.EquippedSlot,
 			HammerAvailable = state.HammerAvailable,
 			BackpackOpen = state.BackpackOpen,
+			DevPickerOpen = state.DevPickerOpen,
 		}
 	end,
 
@@ -34,6 +36,7 @@ local InventoryReducer = Rodux.createReducer(defaultState, {
 			EquippedSlot = state.EquippedSlot,
 			HammerAvailable = state.HammerAvailable,
 			BackpackOpen = state.BackpackOpen,
+			DevPickerOpen = state.DevPickerOpen,
 		}
 	end,
 
@@ -44,6 +47,7 @@ local InventoryReducer = Rodux.createReducer(defaultState, {
 			EquippedSlot = state.EquippedSlot,
 			HammerAvailable = action.available,
 			BackpackOpen = state.BackpackOpen,
+			DevPickerOpen = state.DevPickerOpen,
 		}
 	end,
 
@@ -54,6 +58,7 @@ local InventoryReducer = Rodux.createReducer(defaultState, {
 			EquippedSlot = state.EquippedSlot,
 			HammerAvailable = state.HammerAvailable,
 			BackpackOpen = state.BackpackOpen,
+			DevPickerOpen = state.DevPickerOpen,
 		}
 	end,
 
@@ -64,6 +69,7 @@ local InventoryReducer = Rodux.createReducer(defaultState, {
 			EquippedSlot = action.slot,
 			HammerAvailable = state.HammerAvailable,
 			BackpackOpen = state.BackpackOpen,
+			DevPickerOpen = state.DevPickerOpen,
 		}
 	end,
 
@@ -74,6 +80,18 @@ local InventoryReducer = Rodux.createReducer(defaultState, {
 			EquippedSlot = state.EquippedSlot,
 			HammerAvailable = state.HammerAvailable,
 			BackpackOpen = action.isOpen,
+			DevPickerOpen = state.DevPickerOpen,
+		}
+	end,
+
+	setDevPickerOpen = function(state, action)
+		return {
+			Hotbar = state.Hotbar,
+			Backpack = state.Backpack,
+			EquippedSlot = state.EquippedSlot,
+			HammerAvailable = state.HammerAvailable,
+			BackpackOpen = state.BackpackOpen,
+			DevPickerOpen = action.isOpen,
 		}
 	end,
 
@@ -102,6 +120,7 @@ local InventoryReducer = Rodux.createReducer(defaultState, {
 			EquippedSlot = state.EquippedSlot,
 			HammerAvailable = state.HammerAvailable,
 			BackpackOpen = state.BackpackOpen,
+			DevPickerOpen = state.DevPickerOpen,
 		}
 	end,
 
@@ -146,6 +165,7 @@ local InventoryReducer = Rodux.createReducer(defaultState, {
 			EquippedSlot = state.EquippedSlot,
 			HammerAvailable = state.HammerAvailable,
 			BackpackOpen = state.BackpackOpen,
+			DevPickerOpen = state.DevPickerOpen,
 		}
 	end,
 })

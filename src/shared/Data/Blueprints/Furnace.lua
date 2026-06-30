@@ -1,32 +1,44 @@
---[[
-	Furnace Blueprint Definition
-	Smelt ores and cook food with this blazing furnace.
-
-	Anchor: Bottom block (PrimaryPart of the model)
-	All offsets are relative to the anchor position.
-]]
-
 local Furnace = {
-	id = "furnace",
+	id = "Furnace",
 	name = "Furnace",
 	displayName = "Furnace",
-	description = "Smelt ores and cook food with this blazing furnace.",
-	size = Vector3.new(4, 8, 4), -- Total size: 1x2x1 blocks
+	description = "Description here.",
 
 	-- Block requirements: offset is relative to anchor (PrimaryPart position)
 	blocks = {
-		{ offset = Vector3.new(0, 0, 0), blockType = "Stone" }, -- Anchor block (bottom)
-		{ offset = Vector3.new(0, 4, 0), blockType = "Stone" }, -- Above anchor
+		{ offset = Vector3.new(0, 0, 0), blockType = "HalfStone" }, -- Anchor block
+		{ offset = Vector3.new(0, 0, 2), blockType = "HalfStone" },
+		{ offset = Vector3.new(0, 0, 4), blockType = "HalfStone" },
+		{ offset = Vector3.new(0, 0, 6), blockType = "HalfStone" },
+		{ offset = Vector3.new(2, 0, 0), blockType = "HalfStone" },
+		{ offset = Vector3.new(2, 0, 6), blockType = "HalfStone" },
+		{ offset = Vector3.new(4, 0, 0), blockType = "HalfStone" },
+		{ offset = Vector3.new(4, 0, 2), blockType = "HalfStone" },
+		{ offset = Vector3.new(4, 0, 4), blockType = "HalfStone" },
+		{ offset = Vector3.new(4, 0, 6), blockType = "HalfStone" },
+		{ offset = Vector3.new(0, 2, 0), blockType = "HalfStone" },
+		{ offset = Vector3.new(0, 2, 6), blockType = "HalfStone" },
+		{ offset = Vector3.new(2, 2, 0), blockType = "HalfStone" },
+		{ offset = Vector3.new(2, 2, 6), blockType = "HalfStone" },
+		{ offset = Vector3.new(4, 2, 0), blockType = "HalfStone" },
+		{ offset = Vector3.new(4, 2, 2), blockType = "HalfStone" },
+		{ offset = Vector3.new(4, 2, 4), blockType = "HalfStone" },
+		{ offset = Vector3.new(4, 2, 6), blockType = "HalfStone" },
+		{ offset = Vector3.new(0, 4, 2), blockType = "HalfStone" },
+		{ offset = Vector3.new(0, 4, 4), blockType = "HalfStone" },
+		{ offset = Vector3.new(2, 4, 2), blockType = "HalfStone" },
+		{ offset = Vector3.new(2, 4, 4), blockType = "HalfStone" },
+		{ offset = Vector3.new(4, 4, 2), blockType = "HalfStone" },
+		{ offset = Vector3.new(4, 4, 4), blockType = "HalfStone" },
 	},
 
-	-- Model in ReplicatedStorage with PrimaryPart set as anchor
 	modelPath = "ReplicatedStorage.Assets.Blueprints.Furnace",
 	completedModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.Furnace",
 	completedItemName = "CompletedFurnace",
 	clientClass = "Furnace",
 	serverClass = "Furnace",
 	maxQuantity = 1,
-	requiredRebirth = 1,
+	requiredRebirth = 0,
 }
 
-return Furnace
+return Furnace 

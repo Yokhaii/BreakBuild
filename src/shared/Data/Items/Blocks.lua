@@ -27,7 +27,6 @@ local Blocks = {
 		buildingPartPath = "ReplicatedStorage.Assets.BuildingParts.Grass",
 	},
 
-
 	Stone = {
 		name = "Stone",
 		displayName = "Stone",
@@ -78,6 +77,18 @@ local Blocks = {
 		modelPath = "ReplicatedStorage.Assets.Items.SprucePlank",
 		blockSize = Vector3.new(2, 2, 2),
 		buildingPartPath = "ReplicatedStorage.Assets.BuildingParts.SprucePlank",
+	},
+	HalfStone = {
+		name = "HalfStone",
+		displayName = "Half Stone",
+		type = "Block",
+		stackable = true,
+		maxStack = 64,
+		dropable = true,
+		description = "Half a stone block",
+		modelPath = "ReplicatedStorage.Assets.Items.HalfStone",
+		blockSize = Vector3.new(2, 2, 2),
+		buildingPartPath = "ReplicatedStorage.Assets.BuildingParts.HalfStone",
 	},
 }
 

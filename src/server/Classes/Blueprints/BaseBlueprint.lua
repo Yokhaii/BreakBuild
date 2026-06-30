@@ -186,9 +186,7 @@ function ServerBaseBlueprint:CreateModel(buildingAreaOrigin: Vector3): Model?
 
 	-- Position the model
 	if model:IsA("Model") and model.PrimaryPart then
-		-- Apply rotation
-		local rotation = CFrame.Angles(0, math.rad(self.Rotation), 0)
-		model:SetPrimaryPartCFrame(CFrame.new(worldPosition) * rotation)
+		model:SetPrimaryPartCFrame(CFrame.new(worldPosition))
 
 		-- Make ghost (transparent)
 		self:_ApplyGhostEffect(model)
@@ -383,8 +381,7 @@ function ServerBaseBlueprint:CreateCompletedModel(buildingAreaOrigin: Vector3): 
 
 	-- Position the model
 	if model:IsA("Model") and model.PrimaryPart then
-		local rotation = CFrame.Angles(0, math.rad(self.Rotation), 0)
-		model:SetPrimaryPartCFrame(CFrame.new(worldPosition) * rotation)
+		model:SetPrimaryPartCFrame(CFrame.new(worldPosition))
 
 		-- Make all parts solid and anchored
 		for _, descendant in ipairs(model:GetDescendants()) do

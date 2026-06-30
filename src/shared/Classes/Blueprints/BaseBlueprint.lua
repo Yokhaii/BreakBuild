@@ -63,11 +63,8 @@ end
 function BaseBlueprint:GetRequiredBlockAt(offset: Vector3): string?
 	if not self.Definition then return nil end
 
-	-- Apply rotation to offset
-	local rotatedOffset = self:_RotateOffset(offset)
-
 	for _, blockReq in ipairs(self.Definition.blocks) do
-		if blockReq.offset == rotatedOffset then
+		if blockReq.offset == offset then
 			return blockReq.blockType
 		end
 	end
@@ -75,14 +72,14 @@ function BaseBlueprint:GetRequiredBlockAt(offset: Vector3): string?
 	return nil
 end
 
--- Check if a position is within blueprint bounds
+-- Check if a position is within blueprint bounds (supports negative offsets)
 function BaseBlueprint:IsPositionInBounds(offset: Vector3): boolean
 	if not self.Definition then return false end
 
-	local size = self.Definition.size
-	return offset.X >= 0 and offset.X < size.X and
-	       offset.Y >= 0 and offset.Y < size.Y and
-	       offset.Z >= 0 and offset.Z < size.Z
+	local minOffset, maxOffset = BlueprintDefinitions.GetBounds(self.Definition)
+	return offset.X >= minOffset.X and offset.X <= maxOffset.X and
+	       offset.Y >= minOffset.Y and offset.Y <= maxOffset.Y and
+	       offset.Z >= minOffset.Z and offset.Z <= maxOffset.Z
 end
 
 -- Get the filled block at a specific offset
@@ -172,26 +169,6 @@ end
 function BaseBlueprint:_KeyToOffset(key: string): Vector3
 	local parts = string.split(key, ",")
 	return Vector3.new(tonumber(parts[1]), tonumber(parts[2]), tonumber(parts[3]))
-end
-
--- Internal: Rotate offset based on blueprint rotation
-function BaseBlueprint:_RotateOffset(offset: Vector3): Vector3
-	if not self.Definition then return offset end
-
-	local size = self.Definition.size
-	local rotation = self.Rotation
-
-	if rotation == 0 then
-		return offset
-	elseif rotation == 90 then
-		return Vector3.new(size.Z - 1 - offset.Z, offset.Y, offset.X)
-	elseif rotation == 180 then
-		return Vector3.new(size.X - 1 - offset.X, offset.Y, size.Z - 1 - offset.Z)
-	elseif rotation == 270 then
-		return Vector3.new(offset.Z, offset.Y, size.X - 1 - offset.X)
-	end
-
-	return offset
 end
 
 return BaseBlueprint
