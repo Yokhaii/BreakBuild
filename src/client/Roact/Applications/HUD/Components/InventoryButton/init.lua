@@ -25,7 +25,7 @@ local function InventoryButton(props, hooks)
 			if InventoryController:IsBackpackOpen() then
 				InventoryController:CloseBackpack()
 			else
-				InventoryController:OpenBackpack()
+				InventoryController:OpenBackpackFromHUD()
 			end
 		end
 	end, {})

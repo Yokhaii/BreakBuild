@@ -15,9 +15,9 @@ return {
 		id = "StonePickaxe",
 		displayName = "Stone Pickaxe",
 		stationType = "Workbench",
-		craftTime = 4,
+		craftTime = 10,
 		inputs = {
-			{ itemName = "Stone", quantity = 3 },
+			{ itemName = "StoneShard", quantity = 3 },
 			{ itemName = "SprucePlank", quantity = 2 },
 		},
 		outputs = {

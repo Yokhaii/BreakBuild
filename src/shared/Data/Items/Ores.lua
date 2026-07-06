@@ -2,15 +2,25 @@
 -- Item data for ore-type items
 
 local Ores = {
-	RawIron = {
-		name = "RawIron",
-		displayName = "Raw Iron",
+	StoneShard = {
+		name = "StoneShard",
+		displayName = "Stone Shard",
+		type = "Ore",
+		stackable = true,
+		maxStack = 64,
+		dropable = true,
+		description = "Stone shard used to craft stone tools",
+		modelPath = "ReplicatedStorage.Assets.Items.StoneShard",
+	},
+	IronOre = {
+		name = "IronOre",
+		displayName = "IronOre",
 		type = "Ore",
 		stackable = true,
 		maxStack = 64,
 		dropable = true,
 		description = "Unprocessed iron ore",
-		modelPath = "ReplicatedStorage.Assets.Items.RawIron",
+		modelPath = "ReplicatedStorage.Assets.Items.IronOre",
 	},
 
 	RawGold = {
@@ -33,6 +43,16 @@ local Ores = {
 		dropable = true,
 		description = "Unprocessed diamond ore",
 		modelPath = "ReplicatedStorage.Assets.Items.RawDiamond",
+	},
+	IronIngot = {
+		name = "IronIngot",
+		displayName = "Iron Ingot",
+		type = "Ore",
+		stackable = true,
+		maxStack = 64,
+		dropable = true,
+		description = "iron ingot",
+		modelPath = "ReplicatedStorage.Assets.Items.IronIngot",
 	},
 }
 

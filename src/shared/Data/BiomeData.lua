@@ -14,7 +14,7 @@ BiomeData.Biomes = {
 		},
 	},
 
-	FloatingIsland = {
+	--[[FloatingIsland = {
 		displayName = "Floating Island",
 		generationType = "islands",
 		material = "Stone",
@@ -31,7 +31,7 @@ BiomeData.Biomes = {
 		maxHeight = 75,
 		heightStep = {1, 2},
 		maxJumpGap = 2,
-	},
+	},]]
 }
 
 BiomeData.DefaultBiome = "Mountain"

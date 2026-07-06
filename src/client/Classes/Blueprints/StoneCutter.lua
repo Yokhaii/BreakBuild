@@ -13,6 +13,14 @@ function StoneCutter.new(data)
 	return self
 end
 
+function StoneCutter:OnCrafting(progress: number)
+	-- Add StoneCutter-specific sounds or fx here when crafting is active.
+end
+
+function StoneCutter:OnCraftReceived()
+	-- Add StoneCutter-specific sounds or fx here when the player collects a finished craft.
+end
+
 function StoneCutter:_OnInteract(player)
 	local UIController = Knit.GetController("UIController")
 	local InventoryController = Knit.GetController("InventoryController")

@@ -1,14 +1,14 @@
 return {
-	StoneBrick = {
-		id = "StoneBrick",
-		displayName = "Stone Brick",
+	IronIngot = {
+		id = "IronIngot",
+		displayName = "Iron Ingot",
 		stationType = "Furnace",
-		craftTime = 5,
+		craftTime = 10,
 		inputs = {
-			{ itemName = "Stone", quantity = 2 },
+			{ itemName = "IronOre", quantity = 4 },
 		},
 		outputs = {
-			{ itemName = "StoneBrick", quantity = 1 },
+			{ itemName = "IronIngot", quantity = 1 },
 		},
 	},
 	Sand = {

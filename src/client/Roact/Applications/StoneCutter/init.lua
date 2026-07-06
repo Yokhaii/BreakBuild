@@ -54,6 +54,7 @@ local function StoneCutterApplication(props, hooks)
 	end
 
 	local selectedRecipe, setSelectedRecipe = hooks.useState(nil)
+	local craftCount, setCraftCount = hooks.useState(1)
 	local craftProgress, setCraftProgress = hooks.useState(0)
 
 	local activeSession = craftingState.ActiveSession
@@ -80,7 +81,12 @@ local function StoneCutterApplication(props, hooks)
 	local function onRecipeSelect(recipeId)
 		local recipe = recipes[recipeId]
 		if recipe then
-			setSelectedRecipe(recipe)
+			if selectedRecipe and selectedRecipe.id == recipeId then
+				setCraftCount(math.min(craftCount + 1, 99))
+			else
+				setSelectedRecipe(recipe)
+				setCraftCount(1)
+			end
 		end
 	end
 
@@ -88,7 +94,8 @@ local function StoneCutterApplication(props, hooks)
 		if not selectedRecipe then return end
 		local CraftingController = Knit.GetController("CraftingController")
 		if CraftingController then
-			CraftingController:CraftItem(selectedRecipe.id)
+			CraftingController:CraftItem(selectedRecipe.id, craftCount)
+			setCraftCount(1)
 		end
 	end
 
@@ -115,11 +122,11 @@ local function StoneCutterApplication(props, hooks)
 	if selectedRecipe then
 		if selectedRecipe.inputs[1] then
 			input1Image = Images[selectedRecipe.inputs[1].itemName]
-			hasInput1 = countItem(selectedRecipe.inputs[1].itemName) >= selectedRecipe.inputs[1].quantity
+			hasInput1 = countItem(selectedRecipe.inputs[1].itemName) >= selectedRecipe.inputs[1].quantity * craftCount
 		end
 		if selectedRecipe.inputs[2] then
 			input2Image = Images[selectedRecipe.inputs[2].itemName]
-			hasInput2 = countItem(selectedRecipe.inputs[2].itemName) >= selectedRecipe.inputs[2].quantity
+			hasInput2 = countItem(selectedRecipe.inputs[2].itemName) >= selectedRecipe.inputs[2].quantity * craftCount
 		else
 			hasInput2 = true
 		end
@@ -151,6 +158,7 @@ local function StoneCutterApplication(props, hooks)
 			ImageTransparency = (not hasInput1 and input1Image) and Config.MissingImageTransparency or nil,
 			BackgroundColor = (not hasInput1 and input1Image) and Config.MissingSlotBackgroundColor or nil,
 			ItemName = selectedRecipe and selectedRecipe.inputs[1] and selectedRecipe.inputs[1].itemName or nil,
+			Quantity = selectedRecipe and selectedRecipe.inputs[1] and (selectedRecipe.inputs[1].quantity * craftCount) or nil,
 			OnHoverStart = onHoverStart,
 			OnHoverEnd = onHoverEnd,
 			ZIndex = 12,
@@ -164,6 +172,7 @@ local function StoneCutterApplication(props, hooks)
 			ImageTransparency = (not hasInput2 and input2Image) and Config.MissingImageTransparency or nil,
 			BackgroundColor = (not hasInput2 and input2Image) and Config.MissingSlotBackgroundColor or nil,
 			ItemName = selectedRecipe and selectedRecipe.inputs[2] and selectedRecipe.inputs[2].itemName or nil,
+			Quantity = selectedRecipe and selectedRecipe.inputs[2] and (selectedRecipe.inputs[2].quantity * craftCount) or nil,
 			OnHoverStart = onHoverStart,
 			OnHoverEnd = onHoverEnd,
 			ZIndex = 12,
@@ -188,6 +197,7 @@ local function StoneCutterApplication(props, hooks)
 			ImageTransparency = (not canCraft and outputImage) and Config.MissingImageTransparency or nil,
 			BackgroundColor = (not canCraft and outputImage) and Config.MissingSlotBackgroundColor or nil,
 			ItemName = selectedRecipe and selectedRecipe.outputs[1] and selectedRecipe.outputs[1].itemName or nil,
+			Quantity = selectedRecipe and selectedRecipe.outputs[1] and (selectedRecipe.outputs[1].quantity * craftCount) or nil,
 			OnHoverStart = onHoverStart,
 			OnHoverEnd = onHoverEnd,
 			ZIndex = 12,

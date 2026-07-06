@@ -167,7 +167,7 @@ local function toggleBackpack()
 
 	if not newState then
 		local uiState = Store:getState().UIReducer
-		if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "StoneCutter" then
+		if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "StoneCutter" or uiState.CurrentFrame == "Furnace" then
 			Store:dispatch(UIActions.setCurrentFrame("HUD"))
 		end
 
@@ -295,6 +295,11 @@ function InventoryController:OpenBackpack()
 	Store:dispatch(InventoryActions.setBackpackOpen(true))
 end
 
+function InventoryController:OpenBackpackFromHUD()
+	Store:dispatch(InventoryActions.setBackpackOpen(true))
+	Store:dispatch(InventoryActions.setDevPickerOpen(isDevPlayer))
+end
+
 function InventoryController:CloseBackpack()
 	if dragState.isDragging then
 		cancelDrag()
@@ -303,7 +308,7 @@ function InventoryController:CloseBackpack()
 	Store:dispatch(InventoryActions.setDevPickerOpen(false))
 
 	local uiState = Store:getState().UIReducer
-	if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "StoneCutter" then
+	if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "StoneCutter" or uiState.CurrentFrame == "Furnace" then
 		Store:dispatch(UIActions.setCurrentFrame("HUD"))
 	end
 

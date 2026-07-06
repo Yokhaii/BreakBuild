@@ -1,5 +1,7 @@
 return {
-	RawIron = "97644902325114",
+	IronOre = "99573021351745",
 	RawGold = "111833444003216",
 	RawDiamond = "135139154420751",
+	StoneShard = "130109936052336",
+	IronIngot = "108392466098680"
 }

@@ -13,6 +13,14 @@ function Workbench.new(data)
 	return self
 end
 
+function Workbench:OnCrafting(progress: number)
+	-- Add Workbench-specific sounds or fx here when crafting is active.
+end
+
+function Workbench:OnCraftReceived()
+	-- Add Workbench-specific sounds or fx here when the player collects a finished craft.
+end
+
 function Workbench:_OnInteract(player)
 	local UIController = Knit.GetController("UIController")
 	local InventoryController = Knit.GetController("InventoryController")

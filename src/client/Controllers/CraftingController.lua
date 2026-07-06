@@ -48,10 +48,10 @@ function CraftingController:EndSession()
 	Store:dispatch(CraftingActions.clearSession())
 end
 
-function CraftingController:CraftItem(recipeId: string)
+function CraftingController:CraftItem(recipeId: string, quantity: number?)
 	if not currentBlueprintId then return end
 
-	CraftingService:CraftItem(recipeId)
+	CraftingService:CraftItem(recipeId, quantity or 1)
 		:andThen(function(result)
 			if not result.success and not result.crafting then
 				warn("[CraftingController] CraftItem failed:", result.reason)

@@ -91,6 +91,25 @@ local function ItemSlot(props, _hooks)
 			[Roact.Event.MouseEnter] = handleMouseEnter,
 			[Roact.Event.MouseLeave] = handleMouseLeave,
 		}) or nil,
+
+		QuantityLabel = props.Quantity and Roact.createElement("TextLabel", {
+			Size = UDim2.fromScale(0.6, 0.38),
+			Position = UDim2.fromScale(1, 1),
+			AnchorPoint = Vector2.new(1, 1),
+			BackgroundTransparency = 1,
+			Text = tostring(props.Quantity),
+			TextColor3 = Color3.fromRGB(255, 255, 255),
+			TextScaled = true,
+			FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),
+			TextXAlignment = Enum.TextXAlignment.Right,
+			ZIndex = zIndex + 4,
+		}, {
+			UIStroke = Roact.createElement("UIStroke", {
+				Color = Color3.fromRGB(0, 0, 0),
+				Thickness = 1.5,
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
+			}),
+		}) or nil,
 	})
 end
 

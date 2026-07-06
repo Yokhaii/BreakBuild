@@ -383,10 +383,9 @@ function ServerBaseBlueprint:CreateCompletedModel(buildingAreaOrigin: Vector3): 
 	if model:IsA("Model") and model.PrimaryPart then
 		model:SetPrimaryPartCFrame(CFrame.new(worldPosition))
 
-		-- Make all parts solid and anchored
+		-- Anchor all parts
 		for _, descendant in ipairs(model:GetDescendants()) do
 			if descendant:IsA("BasePart") then
-				descendant.Transparency = 0
 				descendant.CanCollide = true
 				descendant.Anchored = true
 			end

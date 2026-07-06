@@ -29,6 +29,8 @@ local BlueprintService = Knit.CreateService({
 		BlueprintBlockRemoved = Knit.CreateSignal(), -- (blueprintId, offset)
 		BlueprintCompleted = Knit.CreateSignal(), -- (blueprintId)
 		StructurePlaced = Knit.CreateSignal(), -- (structureData) - when completed structure is placed from inventory
+		CraftingProgressUpdated = Knit.CreateSignal(), -- (blueprintId, progress 0..1)
+		CraftingProgressCleared = Knit.CreateSignal(), -- (blueprintId)
 	},
 })
 
@@ -652,6 +654,11 @@ function BlueprintService:LoadPlayerBlueprints(player)
 		-- Notify client
 		self.Client.BlueprintPlaced:Fire(player, bpData)
 	end
+
+	-- Resume any in-progress craft so the progress billboard appears immediately,
+	-- without requiring the player to open the crafting UI first.
+	local CraftingService = Knit.GetService("CraftingService")
+	CraftingService:ResumePlayerCraft(player)
 end
 
 -- Get all blueprints for a player

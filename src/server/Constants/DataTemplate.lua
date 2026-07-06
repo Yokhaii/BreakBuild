@@ -40,6 +40,19 @@ return {
 		BuildingAreaId = nil,
 	},
 
+	-- Crafting System
+	Crafting = {
+		-- In-progress craft saved across sessions.
+		-- nil fields mean no craft was in progress when the player left.
+		ActiveCraft = {
+			-- blueprintId:  string  — which station owns the craft
+			-- recipeId:     string
+			-- quantity:     number
+			-- startedAt:    number (os.time())
+			-- duration:     number (total seconds, already scaled by quantity)
+		},
+	},
+
 	-- Blueprint System
 	Blueprints = {
 		-- Array of placed blueprints in BuildingArea
