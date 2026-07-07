@@ -19,17 +19,24 @@ TreeData.Trees = {
 		requiredTier = "Wood", -- Minimum tool tier required
 		materialType = "Log", -- Material type for breaking system (determines tool tier check)
 	},
-	-- Add more tree types here
-	-- Oak = {
-	-- 	displayName = "Oak Tree",
-	-- 	modelPath = "ReplicatedStorage.Assets.Tree.Oak",
-	-- 	spawnTime = 15,
-	-- 	respawnMultiplier = 10,
-	-- 	breakablePartName = "Log",
-	-- 	dropItem = "Log",
-	-- 	breakTime = 2.0,
-	-- 	requiredTier = "Wood",
-	-- },
+	FirTree = {
+		displayName = "Fir Tree",
+		modelPath = "ReplicatedStorage.Assets.Tree.FirTree",
+		breakablePartName = "Log",
+		dropItem = "Log",
+		breakTime = 2.0,
+		requiredTier = "Wood",
+		materialType = "Log",
+	},
+	ApricotTree = {
+		displayName = "Apricot Tree",
+		modelPath = "ReplicatedStorage.Assets.Tree.ApricotTree",
+		breakablePartName = "Log",
+		dropItem = "Log",
+		breakTime = 2.0,
+		requiredTier = "Wood",
+		materialType = "Log",
+	},
 }
 
 -- Default tree type
