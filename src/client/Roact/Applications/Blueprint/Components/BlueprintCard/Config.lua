@@ -1,46 +1,45 @@
 return {
-	-- Card dimensions (scale-based for responsiveness)
-	CardSize = UDim2.fromScale(1, 0.26),
+	CardSize = UDim2.fromScale(1, 0.16),
 	CornerRadius = UDim.new(0.05, 0),
 
-	-- Card StudBackground
 	CardStudBackgroundColor = Color3.fromRGB(145, 145, 145),
 	CardStudImageTransparency = 0.7,
 
-	-- Card Stroke
 	CardStrokeColor = Color3.fromRGB(255, 255, 255),
 	CardStrokeThickness = 3.5,
 	CardStrokeTransparency = 0.87,
 
-	-- Image container (left side)
+	SelectedStrokeColor = Color3.fromRGB(255, 200, 50),
+	SelectedStrokeTransparency = 0,
+
+	LockedOverlayTransparency = 0.5,
+	LockedTextColor = Color3.fromRGB(200, 200, 200),
+
+	ContentPaddingLeft = UDim.new(0.04, 0),
+	ContentPaddingRight = UDim.new(0.02, 0),
+	ContentPaddingTop = UDim.new(0.05, 0),
+	ContentPaddingBottom = UDim.new(0.05, 0),
+
 	ImageSize = UDim2.fromScale(0.22, 0.85),
 	ImageCornerRadius = UDim.new(0.1, 0),
 	ImageStudBackgroundColor = Color3.fromRGB(60, 60, 60),
 	ImageStudImageTransparency = 0.91,
-	ImageStrokeColor = Color3.fromRGB(0),
+	ImageStrokeColor = Color3.fromRGB(0, 0, 0),
 	ImageStrokeThickness = 2.5,
 	ImageStrokeTransparency = 0.5,
+	IconSize = UDim2.fromScale(0.8, 0.8),
 
-	-- Text colors
+	InfoContainerSize = UDim2.fromScale(0.73, 0.9),
+	InfoContainerPosition = UDim2.fromScale(0.28, 0.5),
+	InfoContainerAnchorPoint = Vector2.new(0, 0.5),
+	InfoLayoutPadding = UDim.new(0.02, 0),
+
+	TitleSize = UDim2.fromScale(1, 0.4),
 	TitleColor = Color3.fromRGB(40, 40, 40),
 	TitleStrokeColor = Color3.fromRGB(160, 160, 160),
 	TitleStrokeThickness = 1.2,
-	DescriptionColor = Color3.fromRGB(0,0,0),
-	MaterialTextColor = Color3.fromRGB(0, 0, 0),
 
-	-- Fonts
-	TitleFont = Font.fromEnum(Enum.Font.GothamBold),
+	DescriptionSize = UDim2.fromScale(1, 0.55),
+	DescriptionColor = Color3.fromRGB(80, 80, 80),
 	DescriptionFont = Font.fromEnum(Enum.Font.Gotham),
-	MaterialFont = Font.fromEnum(Enum.Font.GothamMedium),
-
-	-- Material display
-	MaterialIconSize = UDim2.fromScale(0.6, 0.6),
-
-	-- Material icons (placeholder asset IDs - replace with your actual icons)
-	MaterialIcons = {
-		Wood = "rbxassetid://0",
-		Stone = "rbxassetid://0",
-		Metal = "rbxassetid://0",
-		Fiber = "rbxassetid://0",
-	},
 }

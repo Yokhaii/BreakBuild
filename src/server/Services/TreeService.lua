@@ -135,7 +135,8 @@ local function spawnTree(treeType: string, position: Vector3)
 	local spawnPosition = position + Vector3.new(0, TreeSpawnConfig.SpawnHeightOffset, 0)
 
 	if treeModel.PrimaryPart then
-		treeModel:SetPrimaryPartCFrame(CFrame.new(spawnPosition))
+		local rotation = math.random(0, 3) * (math.pi / 2)
+		treeModel:SetPrimaryPartCFrame(CFrame.new(spawnPosition) * CFrame.Angles(0, rotation, 0))
 	end
 
 	-- Store in Outside folder (or Workspace as fallback)

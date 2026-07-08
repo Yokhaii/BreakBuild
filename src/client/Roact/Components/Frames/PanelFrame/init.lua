@@ -12,6 +12,7 @@ local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
 
 local Components = StarterPlayer.StarterPlayerScripts.Client.Roact.Components
 local StudBackground = require(Components.Global.StudBackground)
+local FancyText = require(Components.Global.FancyText)
 
 local Config = require(script.Config)
 
@@ -41,6 +42,19 @@ local function PanelFrame(props, hooks)
 			Thickness = props.StrokeThickness or Config.StrokeThickness,
 			Transparency = props.StrokeTransparency or Config.StrokeTransparency,
 		}),
+
+		Title = props.Title and Roact.createElement(FancyText, {
+			Name = "PanelTitle",
+			AnchorPoint = Vector2.new(0, 0),
+			Position = Config.TitlePosition,
+			Size = Config.TitleSize,
+			Text = props.Title,
+			TextColor3 = Config.TitleColor,
+			TextScaled = true,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			StrokeTransparency = 1,
+			ZIndex = zIndex + 2,
+		}) or nil,
 
 		MainBackground = Roact.createElement(StudBackground, {
 			ZIndex = zIndex,

@@ -48,6 +48,15 @@ local HAMMER_KEY = Enum.KeyCode.H
 local HOTBAR_SIZE = 7
 local BACKPACK_SIZE = 21
 local DRAG_CLONE_SIZE = UDim2.fromOffset(66, 68)
+local HOTBAR_KEYCODES = {
+	Enum.KeyCode.One,
+	Enum.KeyCode.Two,
+	Enum.KeyCode.Three,
+	Enum.KeyCode.Four,
+	Enum.KeyCode.Five,
+	Enum.KeyCode.Six,
+	Enum.KeyCode.Seven,
+}
 
 -- Private variables
 local InventoryService
@@ -206,14 +215,6 @@ local function onInputBegan(input, gameProcessed)
 		end
 	end
 
-	-- Hotbar number keys (1-7)
-	local keyName = input.KeyCode.Name
-	if keyName:match("^%d$") then
-		local slot = tonumber(keyName)
-		if slot and slot >= 1 and slot <= HOTBAR_SIZE then
-			InventoryController:ToggleEquipSlot(slot)
-		end
-	end
 end
 
 local function onInputEnded(input, gameProcessed)
@@ -326,6 +327,24 @@ end
 
 function InventoryController:KnitStart()
 	InventoryService = Knit.GetService("InventoryService")
+	local KeybindController = Knit.GetController("KeybindController")
+
+	-- Hotbar number keys 1-7: only fires when backpack is closed
+	for slot = 1, HOTBAR_SIZE do
+		local capturedSlot = slot
+		KeybindController:Register(
+			"inventory_hotbar_" .. slot,
+			HOTBAR_KEYCODES[slot],
+			function()
+				InventoryController:ToggleEquipSlot(capturedSlot)
+			end,
+			{
+				condition = function()
+					return not getInventoryState().BackpackOpen
+				end,
+			}
+		)
+	end
 
 	InventoryService:IsDevPlayer():andThen(function(result)
 		isDevPlayer = result

@@ -1,4 +1,9 @@
 return {
+	-- Title (top-left of the outer frame)
+	TitleSize = UDim2.fromScale(0.35, 0.04),
+	TitlePosition = UDim2.fromScale(0.05, 0.01),
+	TitleColor = Color3.fromRGB(21, 21, 21),
+
 	-- Outer grey frame
 	CornerRadius = UDim.new(0.02, 0),
 	MainStudBackgroundColor = Color3.fromRGB(145, 145, 145),

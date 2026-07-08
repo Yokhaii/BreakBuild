@@ -1,6 +1,6 @@
 --[=[
 	BlueprintList Component
-	Scrollable list of BlueprintCards (unlocked and locked)
+	Scrollable list of BlueprintCards
 ]=]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -8,43 +8,28 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Roact = require(ReplicatedStorage.Packages.Roact)
 local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
 
-local UnlockedBlueprintCard = require(script.Parent.UnlockedBlueprintCard)
-local LockedBlueprintCard = require(script.Parent.LockedBlueprintCard)
+local BlueprintCard = require(script.Parent.BlueprintCard)
 
 local Config = require(script.Config)
 
 local function BlueprintList(props, hooks)
 	local blueprints = props.Blueprints or {}
 	local baseZIndex = props.ZIndex or 1
+	local selectedId = props.SelectedBlueprintId
 
-	-- Build card elements
 	local cardElements = {}
 	for i, blueprint in ipairs(blueprints) do
-		local isUnlocked = blueprint.IsUnlocked ~= false
-
-		if isUnlocked then
-			cardElements["Blueprint_" .. i] = Roact.createElement(UnlockedBlueprintCard, {
-				LayoutOrder = i,
-				Title = blueprint.Name,
-				Description = blueprint.Description,
-				Image = blueprint.Image,
-				Materials = blueprint.Materials,
-				BlueprintData = blueprint,
-				OnClick = props.OnBlueprintClick,
-				ZIndex = baseZIndex,
-			})
-		else
-			cardElements["Blueprint_" .. i] = Roact.createElement(LockedBlueprintCard, {
-				LayoutOrder = i,
-				Title = blueprint.Name,
-				Description = blueprint.Description,
-				Image = blueprint.Image,
-				Materials = blueprint.Materials,
-				RequiredRebirth = blueprint.RequiredRebirth,
-				BlueprintData = blueprint,
-				ZIndex = baseZIndex,
-			})
-		end
+		cardElements["Blueprint_" .. i] = Roact.createElement(BlueprintCard, {
+			LayoutOrder = i,
+			Name = blueprint.Name,
+			Description = blueprint.Description,
+			BlueprintData = blueprint,
+			IsUnlocked = blueprint.IsUnlocked ~= false,
+			IsSelected = selectedId == blueprint.Id,
+			RequiredRebirth = blueprint.RequiredRebirth,
+			OnClick = props.OnBlueprintClick,
+			ZIndex = baseZIndex,
+		})
 	end
 
 	return Roact.createElement("ScrollingFrame", {

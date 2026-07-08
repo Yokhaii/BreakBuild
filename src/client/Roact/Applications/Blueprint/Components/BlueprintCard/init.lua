@@ -1,6 +1,8 @@
 --[=[
 	BlueprintCard Component
-	Displays a single blueprint with image, title, description, and required materials
+	Same visual design as RecipeCard: StudBackground card, dark image box on the
+	left showing the CompletedBlueprint icon, title + description on the right.
+	Supports selected highlight and locked overlay.
 ]=]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13,58 +15,24 @@ local Components = StarterPlayer.StarterPlayerScripts.Client.Roact.Components
 local FancyText = require(Components.Global.FancyText)
 local StudBackground = require(Components.Global.StudBackground)
 
+local Images = require(ReplicatedStorage.Shared.Data.Images)
+
 local Config = require(script.Config)
 
 local function BlueprintCard(props, hooks)
-	local isUnlocked = props.IsUnlocked ~= false
-	local requiredRebirth = props.RequiredRebirth or 1
-	local baseZIndex = props.ZIndex or 1
+	local baseZIndex  = props.ZIndex or 1
+	local isUnlocked  = props.IsUnlocked ~= false
+	local isSelected  = props.IsSelected or false
+
+	-- Icon lives under "Completed<Name>" in the Images table
+	local icon = Images["Completed" .. (props.Name or "")] or ""
+
+	local strokeColor        = isSelected and Config.SelectedStrokeColor or Config.CardStrokeColor
+	local strokeTransparency = isSelected and Config.SelectedStrokeTransparency or Config.CardStrokeTransparency
 
 	local function onClick()
-		if not isUnlocked then return end
 		if props.OnClick then
 			props.OnClick(props.BlueprintData)
-		end
-	end
-
-	-- Build material icons
-	local materialElements = {}
-	if props.Materials then
-		for i, material in ipairs(props.Materials) do
-			materialElements["Material_" .. i] = Roact.createElement("Frame", {
-				Size = UDim2.fromScale(0.15, 1),
-				BackgroundTransparency = 1,
-				LayoutOrder = i,
-				ZIndex = baseZIndex + 4,
-			}, {
-				UIAspectRatioConstraint = Roact.createElement("UIAspectRatioConstraint", {
-					AspectRatio = 2.5,
-				}),
-				Icon = Roact.createElement("ImageLabel", {
-					Size = UDim2.fromScale(0.4, 0.8),
-					Position = UDim2.fromScale(0, 0.5),
-					AnchorPoint = Vector2.new(0, 0.5),
-					BackgroundTransparency = 1,
-					Image = Config.MaterialIcons[material.Type] or "",
-					ImageColor3 = isUnlocked and Color3.new(1, 1, 1) or Color3.fromRGB(150, 150, 150),
-					ZIndex = baseZIndex + 4,
-				}, {
-					UIAspectRatioConstraint = Roact.createElement("UIAspectRatioConstraint", {
-						AspectRatio = 1,
-					}),
-				}),
-				Amount = Roact.createElement("TextLabel", {
-					Size = UDim2.fromScale(0.55, 1),
-					Position = UDim2.fromScale(0.45, 0),
-					BackgroundTransparency = 1,
-					Text = tostring(material.Amount),
-					TextColor3 = isUnlocked and Config.MaterialTextColor or Color3.fromRGB(150, 150, 150),
-					TextScaled = true,
-					FontFace = Config.MaterialFont,
-					TextXAlignment = Enum.TextXAlignment.Left,
-					ZIndex = baseZIndex + 4,
-				}),
-			})
 		end
 	end
 
@@ -84,15 +52,15 @@ local function BlueprintCard(props, hooks)
 		}),
 
 		UIStroke = Roact.createElement("UIStroke", {
-			Color = Config.CardStrokeColor,
+			Color = strokeColor,
 			Thickness = Config.CardStrokeThickness,
-			Transparency = Config.CardStrokeTransparency,
+			Transparency = strokeTransparency,
 		}),
 
 		CardBackground = Roact.createElement(StudBackground, {
 			ZIndex = baseZIndex + 1,
-			BackgroundColor = isUnlocked and Config.CardStudBackgroundColor or Config.LockedStudBackgroundColor,
-			ImageTransparency = isUnlocked and Config.CardStudImageTransparency or Config.LockedStudImageTransparency,
+			BackgroundColor = Config.CardStudBackgroundColor,
+			ImageTransparency = Config.CardStudImageTransparency,
 			CornerRadius = Config.CornerRadius,
 		}),
 
@@ -102,10 +70,10 @@ local function BlueprintCard(props, hooks)
 			ZIndex = baseZIndex + 2,
 		}, {
 			UIPadding = Roact.createElement("UIPadding", {
-				PaddingLeft = UDim.new(0.02, 0),
-				PaddingRight = UDim.new(0.02, 0),
-				PaddingTop = UDim.new(0.05, 0),
-				PaddingBottom = UDim.new(0.05, 0),
+				PaddingLeft   = Config.ContentPaddingLeft,
+				PaddingRight  = Config.ContentPaddingRight,
+				PaddingTop    = Config.ContentPaddingTop,
+				PaddingBottom = Config.ContentPaddingBottom,
 			}),
 
 			ImageContainer = Roact.createElement("Frame", {
@@ -133,34 +101,34 @@ local function BlueprintCard(props, hooks)
 					ImageTransparency = Config.ImageStudImageTransparency,
 					CornerRadius = Config.ImageCornerRadius,
 				}),
-				BlueprintIcon = Roact.createElement("ImageLabel", {
-					Size = UDim2.fromScale(0.8, 0.8),
+				Icon = Roact.createElement("ImageLabel", {
+					Size = Config.IconSize,
 					Position = UDim2.fromScale(0.5, 0.5),
 					AnchorPoint = Vector2.new(0.5, 0.5),
 					BackgroundTransparency = 1,
-					Image = props.Image or "",
-					ImageColor3 = isUnlocked and Color3.new(1, 1, 1) or Color3.fromRGB(100, 100, 100),
+					Image = icon,
 					ScaleType = Enum.ScaleType.Fit,
 					ZIndex = baseZIndex + 3,
 				}),
 			}),
 
 			InfoContainer = Roact.createElement("Frame", {
-				Size = UDim2.fromScale(0.73, 1),
-				Position = UDim2.fromScale(0.18, 0),
+				Size = Config.InfoContainerSize,
+				Position = Config.InfoContainerPosition,
+				AnchorPoint = Config.InfoContainerAnchorPoint,
 				BackgroundTransparency = 1,
 				ZIndex = baseZIndex + 3,
 			}, {
 				UIListLayout = Roact.createElement("UIListLayout", {
 					SortOrder = Enum.SortOrder.LayoutOrder,
-					Padding = UDim.new(0.02, 0),
+					Padding = Config.InfoLayoutPadding,
 					VerticalAlignment = Enum.VerticalAlignment.Center,
 				}),
 
 				Title = Roact.createElement(FancyText, {
-					Text = props.Title or "Blueprint",
-					Size = UDim2.fromScale(1, 0.25),
-					TextColor3 = isUnlocked and Config.TitleColor or Color3.fromRGB(150, 150, 150),
+					Text = props.Name or "Blueprint",
+					Size = Config.TitleSize,
+					TextColor3 = Config.TitleColor,
 					StrokeColor = Config.TitleStrokeColor,
 					StrokeThickness = Config.TitleStrokeThickness,
 					TextXAlignment = Enum.TextXAlignment.Left,
@@ -169,40 +137,22 @@ local function BlueprintCard(props, hooks)
 				}),
 
 				Description = Roact.createElement("TextLabel", {
-					Size = UDim2.fromScale(1, 0.4),
+					Size = Config.DescriptionSize,
 					BackgroundTransparency = 1,
-					Text = props.Description or "No description",
-					TextColor3 = isUnlocked and Config.DescriptionColor or Color3.fromRGB(120, 120, 120),
+					Text = props.Description or "",
+					TextColor3 = Config.DescriptionColor,
 					TextScaled = true,
 					FontFace = Config.DescriptionFont,
 					TextXAlignment = Enum.TextXAlignment.Left,
-					TextYAlignment = Enum.TextYAlignment.Top,
 					TextWrapped = true,
 					LayoutOrder = 2,
 					ZIndex = baseZIndex + 4,
-				}),
-
-				MaterialsContainer = Roact.createElement("Frame", {
-					Size = UDim2.fromScale(1, 0.25),
-					BackgroundTransparency = 1,
-					LayoutOrder = 3,
-					ZIndex = baseZIndex + 4,
-				}, {
-					UIListLayout = Roact.createElement("UIListLayout", {
-						FillDirection = Enum.FillDirection.Horizontal,
-						SortOrder = Enum.SortOrder.LayoutOrder,
-						Padding = UDim.new(0.02, 0),
-						VerticalAlignment = Enum.VerticalAlignment.Center,
-					}),
-					Materials = Roact.createFragment(materialElements),
 				}),
 			}),
 		}),
 
 		LockedOverlay = not isUnlocked and Roact.createElement("Frame", {
 			Size = UDim2.fromScale(1, 1),
-			Position = UDim2.fromScale(0.5, 0.5),
-			AnchorPoint = Vector2.new(0.5, 0.5),
 			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 			BackgroundTransparency = Config.LockedOverlayTransparency,
 			ZIndex = baseZIndex + 10,
@@ -211,7 +161,7 @@ local function BlueprintCard(props, hooks)
 				CornerRadius = Config.CornerRadius,
 			}),
 			LockText = Roact.createElement(FancyText, {
-				Text = "Unlock at Rebirth " .. requiredRebirth,
+				Text = "Unlock at Rebirth " .. (props.RequiredRebirth or 1),
 				Size = UDim2.fromScale(0.8, 0.3),
 				Position = UDim2.fromScale(0.5, 0.5),
 				AnchorPoint = Vector2.new(0.5, 0.5),

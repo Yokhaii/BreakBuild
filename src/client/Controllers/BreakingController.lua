@@ -706,7 +706,7 @@ function BreakingController:KnitStart()
 	InventoryController = Knit.GetController("InventoryController")
 	DistanceFadeController = Knit.GetController("DistanceFadeController")
 
-	startGlobalBreakingAreaFade()
+	--startGlobalBreakingAreaFade()
 
 	-- Connect to BreakingService events
 	BreakingService.BreakableRegistered:Connect(onBreakableRegistered)

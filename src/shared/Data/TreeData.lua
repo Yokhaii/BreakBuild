@@ -37,6 +37,15 @@ TreeData.Trees = {
 		requiredTier = "Wood",
 		materialType = "Log",
 	},
+	CherryBlossomTree = {
+		displayName = "CherryBlossom Tree",
+		modelPath = "ReplicatedStorage.Assets.Tree.CherryBlossomTree",
+		breakablePartName = "Log",
+		dropItem = "Log",
+		breakTime = 2.0,
+		requiredTier = "Wood",
+		materialType = "Log",
+	},
 }
 
 -- Default tree type

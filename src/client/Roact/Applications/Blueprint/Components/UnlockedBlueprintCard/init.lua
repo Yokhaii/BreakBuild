@@ -14,9 +14,11 @@ local FancyText = require(Components.Global.FancyText)
 local StudBackground = require(Components.Global.StudBackground)
 
 local Config = require(script.Config)
+local AppConfig = require(script.Parent.Parent.Config)
 
 local function UnlockedBlueprintCard(props, hooks)
 	local baseZIndex = props.ZIndex or 1
+	local isSelected = props.IsSelected or false
 
 	local function onClick()
 		if props.OnClick then
@@ -81,14 +83,14 @@ local function UnlockedBlueprintCard(props, hooks)
 		}),
 
 		UIStroke = Roact.createElement("UIStroke", {
-			Color = Config.CardStrokeColor,
+			Color = isSelected and AppConfig.SelectedCardStrokeColor or Config.CardStrokeColor,
 			Thickness = Config.CardStrokeThickness,
-			Transparency = Config.CardStrokeTransparency,
+			Transparency = isSelected and 0 or Config.CardStrokeTransparency,
 		}),
 
 		CardBackground = Roact.createElement(StudBackground, {
 			ZIndex = baseZIndex + 1,
-			BackgroundColor = Config.CardStudBackgroundColor,
+			BackgroundColor = isSelected and AppConfig.SelectedCardBackgroundColor or Config.CardStudBackgroundColor,
 			ImageTransparency = Config.CardStudImageTransparency,
 			CornerRadius = Config.CornerRadius,
 		}),

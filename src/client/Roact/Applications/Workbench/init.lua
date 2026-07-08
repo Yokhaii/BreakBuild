@@ -271,6 +271,7 @@ local function WorkbenchApplication(props, hooks)
 			Position = Config.PanelPosition,
 			Size = Config.PanelSize,
 			AspectRatio = Config.PanelAspectRatio,
+			Title = "Recipes",
 			ZIndex = 11,
 		}, {
 			RecipeList = Roact.createElement(RecipeList, {

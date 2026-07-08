@@ -1,7 +1,7 @@
 local TreeSpawnConfig = {}
 
 -- Max number of world trees alive at any time
-TreeSpawnConfig.MaxTrees = 64
+TreeSpawnConfig.MaxTrees = 128
 
 -- Seconds between spawn attempts (when below MaxTrees)
 TreeSpawnConfig.SpawnInterval = 5
@@ -34,6 +34,7 @@ TreeSpawnConfig.TreeWeights = {
 	Spruce   = 7,
 	FirTree = 3,
 	ApricotTree = 1,
+	CherryBlossomTree = 2
 }
 
 return TreeSpawnConfig
