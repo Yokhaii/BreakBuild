@@ -17,6 +17,11 @@ local function buildAvailableBlueprints()
 	local definitions = BlueprintDefinitions.GetAllDefinitions()
 
 	for _, definition in pairs(definitions) do
+		-- Skip completed-only blueprints (no blocks to fill, not placeable by the player)
+		if not definition.blocks or #definition.blocks == 0 then
+			continue
+		end
+
 		-- Convert block requirements to materials for display
 		local materials = {}
 		local materialCounts = {}

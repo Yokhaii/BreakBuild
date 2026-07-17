@@ -601,6 +601,31 @@ function BlueprintService:RemoveUncompletedBlueprint(player, blueprintId)
 	return true, blueprintItemName
 end
 
+-- Place the starter LogCutter for a brand-new player. Runs exactly once per account,
+-- guarded by the persistent HasReceivedLogCutter flag.
+local function ensureDefaultLogCutter(player, blueprintData, areaOrigin)
+	if blueprintData.HasReceivedLogCutter then
+		return
+	end
+
+	blueprintData.HasReceivedLogCutter = true
+
+	local defaultRelative = Vector3.new(0, 2, 0)
+	local blueprintId = generateBlueprintId(player)
+	local newBlueprintData = {
+		id = blueprintId,
+		blueprintType = "LogCutter",
+		relativePosition = { x = defaultRelative.X, y = defaultRelative.Y, z = defaultRelative.Z },
+		rotation = 0,
+		ownerId = player.UserId,
+		completedAt = os.time(),
+		filledBlocks = {},
+	}
+
+	table.insert(blueprintData.PlacedBlueprints, newBlueprintData)
+	print("[BlueprintService] Placed starter LogCutter for", player.Name)
+end
+
 -- Load all blueprints for a player (called on join)
 function BlueprintService:LoadPlayerBlueprints(player)
 	local blueprintData = getBlueprintData(player)
@@ -610,6 +635,9 @@ function BlueprintService:LoadPlayerBlueprints(player)
 
 	-- Initialize player blueprint table
 	playerBlueprints[player] = {}
+
+	-- Give new players a default completed LogCutter
+	ensureDefaultLogCutter(player, blueprintData, areaOrigin)
 
 	for _, bpData in ipairs(blueprintData.PlacedBlueprints) do
 		-- Create blueprint instance

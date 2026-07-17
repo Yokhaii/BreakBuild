@@ -1,6 +1,7 @@
 local Workbench = require(script.Workbench)
 local StoneCutter = require(script.StoneCutter)
 local Furnace = require(script.Furnace)
+local LogCutter = require(script.LogCutter)
 
 local Recipes = {}
 Recipes.All = {}
@@ -14,6 +15,10 @@ for id, recipe in pairs(StoneCutter) do
 end
 
 for id, recipe in pairs(Furnace) do
+	Recipes.All[id] = recipe
+end
+
+for id, recipe in pairs(LogCutter) do
 	Recipes.All[id] = recipe
 end
 

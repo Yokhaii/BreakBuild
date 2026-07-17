@@ -22,6 +22,7 @@ local DevItemPicker = require(Components.Global.DevItemPicker)
 local WorkbenchApplication = require(Client.Roact.Applications.Workbench)
 local StoneCutterApplication = require(Client.Roact.Applications.StoneCutter)
 local FurnaceApplication = require(Client.Roact.Applications.Furnace)
+local LogCutterApplication = require(Client.Roact.Applications.LogCutter)
 
 local Config = require(script.Config)
 
@@ -42,6 +43,7 @@ local function Backpack(props, hooks)
 	local isWorkbenchOpen = currentFrame == "Workbench"
 	local isStoneCutterOpen = currentFrame == "StoneCutter"
 	local isFurnaceOpen = currentFrame == "Furnace"
+	local isLogCutterOpen = currentFrame == "LogCutter"
 
 	local hoveredItemName, setHoveredItemName = hooks.useState(nil)
 
@@ -212,6 +214,11 @@ local function Backpack(props, hooks)
 			}) or nil,
 
 			Furnace = isFurnaceOpen and Roact.createElement(FurnaceApplication, {
+				OnHoverStart = handleHoverStart,
+				OnHoverEnd = handleHoverEnd,
+			}) or nil,
+
+			LogCutter = isLogCutterOpen and Roact.createElement(LogCutterApplication, {
 				OnHoverStart = handleHoverStart,
 				OnHoverEnd = handleHoverEnd,
 			}) or nil,

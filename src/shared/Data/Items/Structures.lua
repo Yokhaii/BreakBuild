@@ -44,6 +44,20 @@ local Structures = {
 		blueprintType = "StoneCutter",
 		placementModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.StoneCutter",
 	},
+
+	CompletedLogCutter = {
+		name = "CompletedLogCutter",
+		displayName = "Log Cutter",
+		type = "Structure",
+		stackable = false,
+		maxStack = 1,
+		dropable = true,
+		description = "A log cutter. Place it to cut logs into planks.",
+		modelPath = "Assets.Items.CompletedLogCutter",
+		isStructure = true,
+		blueprintType = "LogCutter",
+		placementModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.LogCutter",
+	},
 }
 
 return Structures

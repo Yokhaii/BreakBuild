@@ -55,6 +55,9 @@ return {
 
 	-- Blueprint System
 	Blueprints = {
+		-- Set to true after the starter LogCutter has been placed once; never resets.
+		HasReceivedLogCutter = false,
+
 		-- Array of placed blueprints in BuildingArea
 		PlacedBlueprints = {
 			-- Each blueprint: {

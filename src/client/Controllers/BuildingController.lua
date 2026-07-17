@@ -25,6 +25,7 @@ local ItemData = require(ReplicatedStorage.Shared.Data.Items)
 
 -- Controllers (resolved at KnitStart)
 local DistanceFadeController
+local BlueprintController
 
 -- BuildingController
 local BuildingController = Knit.CreateController({
@@ -67,7 +68,7 @@ local hoveredBlueprint = nil -- Currently hovered uncompleted blueprint
 local blueprintPreviewHighlight = nil
 local blueprintPreviewBillboard = nil
 local hoveredPreviewBlueprint = nil
-local hoveredPreviewType = nil -- "blueprint" or "structure"
+local hoveredPreviewType = nil -- "blueprint", "structure", or "blueprints_table"
 
 -- BuildingArea tracking state
 local playerInBuildingArea = false
@@ -214,7 +215,7 @@ local function stopDistanceFade()
 end
 
 -- Detect block, structure, or uncompleted blueprint under cursor for removal
--- Returns: model, targetType ("block", "structure", "blueprint", or nil)
+-- Returns: model, targetType ("block", "structure", "blueprint", "blueprints_table", or nil)
 local function detectRemovableUnderCursor(): (Model?, string?)
 	local camera = Workspace.CurrentCamera
 	local mouseRay = camera:ScreenPointToRay(mouse.X, mouse.Y)
@@ -246,6 +247,15 @@ local function detectRemovableUnderCursor(): (Model?, string?)
 	local zone = getBuildingZone()
 	if not zone then
 		return nil, nil
+	end
+
+	-- Check if the hit is the static Blueprints table (BuildingZone > Platform > Blueprints)
+	local platform = zone:FindFirstChild("Platform")
+	if platform then
+		local blueprintsTable = platform:FindFirstChild("Blueprints")
+		if blueprintsTable and hitInstance:IsDescendantOf(blueprintsTable) then
+			return blueprintsTable, "blueprints_table"
+		end
 	end
 
 	-- Traverse up to find if this is part of a model in BuildingZone
@@ -320,6 +330,8 @@ local function getTargetDisplayName(target: Model?, targetType: string?): string
 			end
 		end
 		return "Blueprint"
+	elseif targetType == "blueprints_table" then
+		return "Blueprints"
 	end
 
 	return "Unknown"
@@ -461,8 +473,8 @@ local function updateBlueprintPreviewMode()
 	-- Use same detection as removal mode
 	local target, targetType = detectRemovableUnderCursor()
 
-	-- Only show highlight for blueprints and structures (not blocks)
-	if targetType ~= "blueprint" and targetType ~= "structure" then
+	-- Only show highlight for blueprints, structures, and the blueprints table (not blocks)
+	if targetType ~= "blueprint" and targetType ~= "structure" and targetType ~= "blueprints_table" then
 		target = nil
 		targetType = nil
 	end
@@ -1062,13 +1074,21 @@ local function onMouseClick()
 		return
 	end
 
+	-- Handle click on the static Blueprints table
+	if hoveredPreviewBlueprint and hoveredPreviewType == "blueprints_table" then
+		if BlueprintController then
+			BlueprintController:OpenBlueprintMenu()
+		end
+		return
+	end
+
 	-- Handle building mode
 	if not buildingMode or not currentPosition or not currentBlockItem then
 		return
 	end
 
-	-- Don't place block when hovering over completed structure
-	if hoveredPreviewBlueprint and hoveredPreviewType == "structure" then
+	-- Don't place block when hovering over completed structure or blueprints table
+	if hoveredPreviewBlueprint and (hoveredPreviewType == "structure" or hoveredPreviewType == "blueprints_table") then
 		return
 	end
 
@@ -1128,6 +1148,7 @@ function BuildingController:KnitStart()
 	InventoryController = Knit.GetController("InventoryController")
 	BlueprintPlacementController = Knit.GetController("BlueprintPlacementController")
 	DistanceFadeController = Knit.GetController("DistanceFadeController")
+	BlueprintController = Knit.GetController("BlueprintController")
 
 	-- Get building zone
 	getBuildingZone()
@@ -1176,15 +1197,58 @@ function BuildingController:KnitStart()
 			updateRemovalMode()
 			clearBlueprintPreviewHighlight()
 		else
-			-- Show blueprint preview when inside BuildingArea
+			-- Show blueprint preview when inside BuildingArea, but always check
+			-- the static Blueprints table (it lives outside the BuildingArea).
 			if playerInBuildingArea then
 				updateBlueprintPreviewMode()
 			else
-				clearBlueprintPreviewHighlight()
+				-- Outside building area: still detect the Blueprints table
+				local target, targetType = detectRemovableUnderCursor()
+				if targetType ~= "blueprints_table" then
+					target = nil
+					targetType = nil
+				end
+				if target ~= hoveredPreviewBlueprint then
+					clearBlueprintPreviewHighlight()
+					hoveredPreviewBlueprint = target
+					hoveredPreviewType = targetType
+					if target then
+						local highlight = Instance.new("Highlight")
+						highlight.FillTransparency = 1
+						highlight.OutlineTransparency = 0.7
+						highlight.OutlineColor = Color3.new(0, 0, 0)
+						highlight.Adornee = target
+						highlight.Parent = target
+						blueprintPreviewHighlight = highlight
+
+						local billboardAdornee = target:FindFirstChild("BillboardAttach", true)
+						if not billboardAdornee and target:IsA("Model") and target.PrimaryPart then
+							billboardAdornee = target.PrimaryPart
+						end
+						if billboardAdornee then
+							local billboard = Instance.new("BillboardGui")
+							billboard.Size = UDim2.new(2, 0, 2, 0)
+							billboard.StudsOffset = Vector3.new(0, 0, 0)
+							billboard.Adornee = billboardAdornee
+							billboard.AlwaysOnTop = true
+							local textLabel = Instance.new("TextLabel")
+							textLabel.Size = UDim2.new(1, 0, 1, 0)
+							textLabel.BackgroundTransparency = 1
+							textLabel.Text = "Blueprints"
+							textLabel.TextColor3 = Color3.new(1, 1, 1)
+							textLabel.TextStrokeTransparency = 0.5
+							textLabel.Font = Enum.Font.GothamBold
+							textLabel.TextScaled = true
+							textLabel.Parent = billboard
+							billboard.Parent = target
+							blueprintPreviewBillboard = billboard
+						end
+					end
+				end
 			end
 
 			if buildingMode then
-				if hoveredPreviewBlueprint and hoveredPreviewType == "structure" then
+				if hoveredPreviewBlueprint and (hoveredPreviewType == "structure" or hoveredPreviewType == "blueprints_table") then
 					if previewModel and previewModel.Parent then
 						previewModel.Parent = nil
 					end
