@@ -28,6 +28,20 @@ return {
 	MaxDepth = 10, -- Max layers below ground (Y=-1 to Y=-10)
 	InitialUndergroundLayers = 3, -- How many underground layers to place at start
 
+	-- Ore Generation
+	OreConfig = {
+		IronOreBlock = {
+			spawnChance = 0.008, -- 6% chance per stone block
+			clusterSize = { min = 2, max = 3 },
+			minDepth = -2, -- Only spawns at Y=-2 and below
+		},
+		CoalOreBlock = {
+			spawnChance = 0.012, -- 8% chance per stone block
+			clusterSize = { min = 2, max = 6 },
+			minDepth = -1, -- Spawns at Y=-1 and below
+		},
+	},
+
 	-- Breaking
 	BreakRange = 24,
 

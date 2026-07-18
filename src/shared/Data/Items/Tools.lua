@@ -26,6 +26,22 @@ local Tools = {
 		breakSpeed = 1.0,
 		toolTier = "Wood",
 	},
+	DevPickaxe = {
+		name = "DevPickaxe",
+		displayName = "DEv Pickaxe",
+		type = "Tool",
+		stackable = false,
+		maxStack = 1,
+		dropable = true,
+		description = "I'm fast as f*** boy",
+		modelPath = "Assets.Items.DevPickaxe",
+		-- Breaking properties
+		isBreakingTool = true,
+		breakSpeed = 50,
+		toolTier = "Wood",
+		-- For testing: bypass tier check and break anything
+		canBreakAll = true,
+	},
 
 	WoodenPickaxe = {
 		name = "WoodenPickaxe",
@@ -38,7 +54,7 @@ local Tools = {
 		modelPath = "Assets.Items.WoodenPickaxe",
 		-- Breaking properties
 		isBreakingTool = true,
-		breakSpeed = 50,
+		breakSpeed = 1,
 		toolTier = "Wood",
 		-- For testing: bypass tier check and break anything
 		canBreakAll = true,

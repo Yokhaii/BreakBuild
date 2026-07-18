@@ -178,37 +178,6 @@ local function findFirstEmptyBackpackSlot(inventory): number?
 	return nil
 end
 
-local function ensureStarterPickaxe(inventory)
-	for slot = 1, HOTBAR_SIZE do
-		if inventory.Hotbar[slot] and inventory.Hotbar[slot].itemName == "WoodenPickaxe" then
-			return
-		end
-	end
-	for slot = 1, BACKPACK_SIZE do
-		if bpGet(inventory.Backpack, slot) and bpGet(inventory.Backpack, slot).itemName == "WoodenPickaxe" then
-			return
-		end
-	end
-
-	local pickaxeItem = {
-		id = "woodenpickaxe_starter",
-		itemName = "WoodenPickaxe",
-		quantity = 1,
-	}
-
-	for slot = 1, HOTBAR_SIZE do
-		if not inventory.Hotbar[slot] then
-			inventory.Hotbar[slot] = pickaxeItem
-			return
-		end
-	end
-
-	local emptySlot = findFirstEmptyBackpackSlot(inventory)
-	if emptySlot then
-		bpSet(inventory.Backpack, emptySlot, pickaxeItem)
-	end
-end
-
 local function removeHammerFromInventory(inventory)
 	for slot = 1, HOTBAR_SIZE do
 		if inventory.Hotbar[slot] and inventory.Hotbar[slot].itemName == "Hammer" then
@@ -981,9 +950,6 @@ function InventoryService:KnitStart()
 		if removedCount > 0 then
 			print("[InventoryService] Cleaned up", removedCount, "invalid items for", player.Name)
 		end
-
-		-- Ensure starter tool
-		ensureStarterPickaxe(inventory)
 
 		-- Always start unequipped
 		inventory.EquippedSlot = nil

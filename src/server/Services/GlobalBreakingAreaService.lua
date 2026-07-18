@@ -32,6 +32,13 @@ local placementQueue: {{x: number, y: number, z: number, materialType: string}} 
 -- Used by Mountain biome
 local heightmap: {[number]: {[number]: number}} = {}
 
+-- Drop overrides: blocks that drop a different item than themselves
+local DROP_OVERRIDES = {
+	Grass = "Dirt",
+	IronOreBlock = "IronOre",
+	CoalOreBlock = "Coal",
+}
+
 local function encodeKey(x: number, y: number, z: number): string
 	return x .. "," .. y .. "," .. z
 end
@@ -162,13 +169,65 @@ local function placeBlockImmediate(x: number, y: number, z: number, materialType
 
 	placedBlocks[key] = model
 
+	local dropItem = DROP_OVERRIDES[materialType] or materialType
+
 	BreakingService:RegisterGlobalBreakable(breakableId, {
 		materialType = materialType,
-		dropItem = materialType,
+		dropItem = dropItem,
 		dropAmount = 1,
 		position = position,
 		part = model,
 	})
+end
+
+-- Ore cluster generation: marks positions that should be ore instead of stone
+local oreOverrides: {[string]: string} = {}
+
+local function generateOreCluster(startX: number, startY: number, startZ: number, oreType: string, clusterSize: number)
+	local gridX = GlobalBreakingConfig.GridSizeX
+	local gridZ = GlobalBreakingConfig.GridSizeZ
+	local rng = Random.new(currentSeed + startX * 1000 + startY * 100 + startZ)
+
+	local placed = 0
+	local cx, cy, cz = startX, startY, startZ
+
+	for _ = 1, clusterSize do
+		if cx >= 0 and cx < gridX and cz >= 0 and cz < gridZ then
+			local key = encodeKey(cx, cy, cz)
+			oreOverrides[key] = oreType
+			placed = placed + 1
+		end
+
+		-- Spread to adjacent block
+		local dir = rng:NextInteger(1, 6)
+		if dir == 1 then cx = cx + 1
+		elseif dir == 2 then cx = cx - 1
+		elseif dir == 3 then cz = cz + 1
+		elseif dir == 4 then cz = cz - 1
+		elseif dir == 5 then cy = cy + 1
+		elseif dir == 6 then cy = cy - 1
+		end
+	end
+end
+
+local function generateOresForLayer(y: number)
+	local gridX = GlobalBreakingConfig.GridSizeX
+	local gridZ = GlobalBreakingConfig.GridSizeZ
+	local oreConfig = GlobalBreakingConfig.OreConfig
+	local rng = Random.new(currentSeed + y * 7919)
+
+	for oreType, config in pairs(oreConfig) do
+		if y <= config.minDepth then
+			for x = 0, gridX - 1 do
+				for z = 0, gridZ - 1 do
+					if rng:NextNumber() < config.spawnChance then
+						local size = rng:NextInteger(config.clusterSize.min, config.clusterSize.max)
+						generateOreCluster(x, y, z, oreType, size)
+					end
+				end
+			end
+		end
+	end
 end
 
 local function placeLayer(y: number, materialType: string?, biome: {}?)
@@ -187,9 +246,16 @@ local function placeLayer(y: number, materialType: string?, biome: {}?)
 		mat = materialType or "Stone"
 	end
 
+	-- Generate ores for underground layers
+	if y < 0 and mat ~= "Bedrock" then
+		generateOresForLayer(y)
+	end
+
 	for x = 0, gridX - 1 do
 		for z = 0, gridZ - 1 do
-			table.insert(placementQueue, {x = x, y = y, z = z, materialType = mat})
+			local key = encodeKey(x, y, z)
+			local blockMat = oreOverrides[key] or mat
+			table.insert(placementQueue, {x = x, y = y, z = z, materialType = blockMat})
 		end
 	end
 end
@@ -353,6 +419,7 @@ local function destroyAllBlocks()
 	placedBlocks = {}
 	placementQueue = {}
 	heightmap = {}
+	oreOverrides = {}
 	lowestRevealedY = 0
 end
 
@@ -409,7 +476,7 @@ local function onGlobalBreakableDestroyed(player: Player, breakableId: string, d
 	local key = encodeKey(x, y, z)
 	placedBlocks[key] = nil
 
-	if y == lowestRevealedY then
+	if y >= lowestRevealedY and y <= lowestRevealedY + 2 then
 		revealNextUndergroundLayer()
 	end
 end
@@ -419,7 +486,7 @@ local function processPlacementQueue()
 
 	local batchSize = GlobalBreakingConfig.PlacementBatchSize
 	for _ = 1, math.min(batchSize, #placementQueue) do
-		local entry = table.remove(placementQueue, 1)
+		local entry = table.remove(placementQueue)
 		if entry then
 			placeBlockImmediate(entry.x, entry.y, entry.z, entry.materialType)
 		end

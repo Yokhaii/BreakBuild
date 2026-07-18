@@ -299,11 +299,6 @@ local function updatePreview()
 
 	-- Build filter list
 	local filterList = {player.Character, previewModel}
-	for _, part in ipairs(Workspace:GetDescendants()) do
-		if part:IsA("BasePart") and part:GetAttribute("Ignore") then
-			table.insert(filterList, part)
-		end
-	end
 	raycastParams.FilterDescendantsInstances = filterList
 
 	-- Perform raycast

@@ -88,7 +88,7 @@ MaterialData.Properties = {
         color = Color3.fromRGB(101, 67, 33),
         -- Breaking properties
         breakTime = 1.5,
-        requiredTier = "Wood",
+        requiredTier = "Hand",
     },
     RawIron = {
         displayName = "Raw Iron",
@@ -130,6 +130,20 @@ MaterialData.Properties = {
         breakTime = math.huge,
         requiredTier = "Diamond",
     },
+    IronOreBlock = {
+        displayName = "Iron Ore",
+        rarity = "Uncommon",
+        color = Color3.fromRGB(180, 150, 120),
+        breakTime = 3.0,
+        requiredTier = "Stone",
+    },
+    CoalOreBlock = {
+        displayName = "Coal Ore",
+        rarity = "Common",
+        color = Color3.fromRGB(50, 50, 50),
+        breakTime = 2.0,
+        requiredTier = "Wood",
+    },
 }
 
 -- List of all valid material names
@@ -142,6 +156,8 @@ MaterialData.ValidMaterials = {
     "RawGold",
     "RawDiamond",
     "Structure",
+    "IronOreBlock",
+    "CoalOreBlock",
 }
 
 -- Materials that can spawn in the BreakingZone (only blocks with 3D models)

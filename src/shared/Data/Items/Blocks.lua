@@ -104,6 +104,28 @@ local Blocks = {
 		blockSize = Vector3.new(4, 4, 4),
 		buildingPartPath = "ReplicatedStorage.Assets.BuildingParts.Bedrock",
 	},
+
+	IronOreBlock = {
+		name = "IronOreBlock",
+		displayName = "Iron Ore",
+		type = "Block",
+		stackable = false,
+		maxStack = 1,
+		dropable = false,
+		description = "Iron ore vein found underground",
+		buildingPartPath = "ReplicatedStorage.Assets.BuildingParts.IronOreBlock",
+	},
+
+	CoalOreBlock = {
+		name = "CoalOreBlock",
+		displayName = "Coal Ore",
+		type = "Block",
+		stackable = false,
+		maxStack = 1,
+		dropable = false,
+		description = "Coal ore vein found underground",
+		buildingPartPath = "ReplicatedStorage.Assets.BuildingParts.CoalOreBlock",
+	},
 }
 
 return Blocks
