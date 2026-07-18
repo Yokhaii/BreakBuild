@@ -12,17 +12,36 @@ local function RecipeList(props, hooks)
 	local baseZIndex = props.ZIndex or 1
 	local selectedRecipeId = props.SelectedRecipeId
 
-	local cardElements = {}
-	local i = 0
+	local sortedRecipes = {}
 	for recipeId, recipe in pairs(recipes) do
-		i = i + 1
-		local isSelected = selectedRecipeId == recipeId
+		table.insert(sortedRecipes, { id = recipeId, recipe = recipe })
+	end
+	table.sort(sortedRecipes, function(a, b)
+		return (a.recipe.order or 999) < (b.recipe.order or 999)
+	end)
 
-		cardElements["Recipe_" .. recipeId] = Roact.createElement(RecipeCard, {
+	local countItem = props.CountItem
+
+	local cardElements = {}
+	for i, entry in ipairs(sortedRecipes) do
+		local isSelected = selectedRecipeId == entry.id
+
+		local canCraft = true
+		if countItem and entry.recipe.inputs then
+			for _, input in ipairs(entry.recipe.inputs) do
+				if countItem(input.itemName) < input.quantity then
+					canCraft = false
+					break
+				end
+			end
+		end
+
+		cardElements["Recipe_" .. entry.id] = Roact.createElement(RecipeCard, {
 			LayoutOrder = i,
-			Recipe = recipe,
+			Recipe = entry.recipe,
 			OnSelect = props.OnRecipeSelect,
 			IsSelected = isSelected,
+			IsLocked = not canCraft,
 			ZIndex = baseZIndex,
 		})
 	end

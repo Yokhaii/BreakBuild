@@ -720,12 +720,6 @@ local function updatePreview()
 		table.insert(filterList, previewGlassModel)
 	end
 
-	-- Add all parts with "Ignore" attribute to filter
-	for _, part in ipairs(Workspace:GetDescendants()) do
-		if part:IsA("BasePart") and part:GetAttribute("Ignore") then
-			table.insert(filterList, part)
-		end
-	end
 
 	-- Add blueprint models to filter (so we can place blocks inside blueprints)
 	local zone = getBuildingZone()

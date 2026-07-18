@@ -9,7 +9,7 @@ return {
 
 	-- Card Stroke
 	CardStrokeColor = Color3.fromRGB(255, 255, 255),
-	CardStrokeThickness = 3.5,
+	CardStrokeThickness = 2,
 	CardStrokeTransparency = 0.87,
 
 	-- Image container (left side)
@@ -24,7 +24,7 @@ return {
 	-- Text colors
 	TitleColor = Color3.fromRGB(40, 40, 40),
 	TitleStrokeColor = Color3.fromRGB(160, 160, 160),
-	TitleStrokeThickness = 1.2,
+	TitleStrokeThickness = 2,
 	DescriptionColor = Color3.fromRGB(0, 0, 0),
 	MaterialTextColor = Color3.fromRGB(0, 0, 0),
 

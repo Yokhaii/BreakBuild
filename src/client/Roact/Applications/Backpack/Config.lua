@@ -10,7 +10,7 @@ return {
 	StudBackgroundColor = Color3.fromRGB(145, 145, 145),
 	StudImageTransparency = 0.7,
 	StrokeColor = Color3.fromRGB(255, 255, 255),
-	StrokeThickness = 3.5,
+	StrokeThickness = 2,
 	StrokeTransparency = 0.87,
 
 	-- Grid layout (7 columns, 4 rows)

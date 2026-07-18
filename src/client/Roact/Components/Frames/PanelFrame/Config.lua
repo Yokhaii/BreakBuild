@@ -9,7 +9,7 @@ return {
 	MainStudBackgroundColor = Color3.fromRGB(145, 145, 145),
 	MainStudImageTransparency = 0.7,
 	StrokeColor = Color3.fromRGB(255, 255, 255),
-	StrokeThickness = 3.5,
+	StrokeThickness = 2,
 	StrokeTransparency = 0.87,
 
 	-- Inner dark content area

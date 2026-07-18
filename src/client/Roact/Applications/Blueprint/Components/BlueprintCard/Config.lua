@@ -1,12 +1,12 @@
 return {
-	CardSize = UDim2.fromScale(1, 0.16),
+	CardSize = UDim2.fromScale(0.94, 0.15),
 	CornerRadius = UDim.new(0.05, 0),
 
 	CardStudBackgroundColor = Color3.fromRGB(145, 145, 145),
 	CardStudImageTransparency = 0.7,
 
 	CardStrokeColor = Color3.fromRGB(255, 255, 255),
-	CardStrokeThickness = 3.5,
+	CardStrokeThickness = 2,
 	CardStrokeTransparency = 0.87,
 
 	SelectedStrokeColor = Color3.fromRGB(255, 200, 50),
@@ -37,7 +37,7 @@ return {
 	TitleSize = UDim2.fromScale(1, 0.4),
 	TitleColor = Color3.fromRGB(40, 40, 40),
 	TitleStrokeColor = Color3.fromRGB(160, 160, 160),
-	TitleStrokeThickness = 1.2,
+	TitleStrokeThickness = 2,
 
 	DescriptionSize = UDim2.fromScale(1, 0.55),
 	DescriptionColor = Color3.fromRGB(80, 80, 80),

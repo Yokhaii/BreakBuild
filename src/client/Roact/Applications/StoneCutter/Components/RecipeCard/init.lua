@@ -16,6 +16,7 @@ local function RecipeCard(props, hooks)
 	local baseZIndex = props.ZIndex or 1
 	local recipe = props.Recipe
 	local isSelected = props.IsSelected or false
+	local isLocked = props.IsLocked or false
 
 	local function onClick()
 		if props.OnSelect then
@@ -68,6 +69,9 @@ local function RecipeCard(props, hooks)
 
 	local strokeColor = isSelected and Config.SelectedStrokeColor or Config.CardStrokeColor
 	local strokeTransparency = isSelected and Config.SelectedStrokeTransparency or Config.CardStrokeTransparency
+	if isLocked then
+		strokeTransparency = Config.LockedStrokeTransparency
+	end
 
 	return Roact.createElement("ImageButton", {
 		Size = props.Size or Config.CardSize,
@@ -186,6 +190,17 @@ local function RecipeCard(props, hooks)
 				}),
 			}),
 		}),
+
+		LockedOverlay = isLocked and Roact.createElement("Frame", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+			BackgroundTransparency = Config.LockedOverlayTransparency,
+			ZIndex = baseZIndex + 10,
+		}, {
+			UICorner = Roact.createElement("UICorner", {
+				CornerRadius = Config.CornerRadius,
+			}),
+		}) or nil,
 	})
 end
 

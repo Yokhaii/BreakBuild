@@ -90,6 +90,18 @@ local Blocks = {
 		blockSize = Vector3.new(2, 2, 2),
 		buildingPartPath = "ReplicatedStorage.Assets.BuildingParts.HalfStone",
 	},
+
+	Bedrock = {
+		name = "Bedrock",
+		displayName = "Bedrock",
+		type = "Block",
+		stackable = false,
+		maxStack = 1,
+		dropable = false,
+		description = "Indestructible block",
+		blockSize = Vector3.new(4, 4, 4),
+		buildingPartPath = "ReplicatedStorage.Assets.BuildingParts.Bedrock",
+	},
 }
 
 return Blocks

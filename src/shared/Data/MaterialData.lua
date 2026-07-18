@@ -122,6 +122,14 @@ MaterialData.Properties = {
         breakTime = 2.0,
         requiredTier = "Wood",
     },
+    Bedrock = {
+        displayName = "Bedrock",
+        rarity = "Common",
+        color = Color3.fromRGB(40, 40, 40),
+        unbreakable = true,
+        breakTime = math.huge,
+        requiredTier = "Diamond",
+    },
 }
 
 -- List of all valid material names
@@ -189,6 +197,8 @@ end
 function MaterialData.CanToolBreak(toolTier: string, materialName: string): boolean
     local props = MaterialData.Properties[materialName]
     if not props then return false end
+
+    if props.unbreakable then return false end
 
     local toolLevel = MaterialData.ToolTierOrder[toolTier] or 0
     local requiredLevel = MaterialData.ToolTierOrder[props.requiredTier] or 0

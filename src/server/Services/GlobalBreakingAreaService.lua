@@ -113,7 +113,45 @@ local function createBlockModel(materialType: string, position: Vector3, breakab
 	return model
 end
 
+local function placeBedrockBlock(x: number, y: number, z: number)
+	local key = encodeKey(x, y, z)
+	if placedBlocks[key] then return end
+
+	local position = gridToWorldPosition(x, y, z)
+	local itemConfig = ItemData.GetItem("Bedrock")
+	if not itemConfig or not itemConfig.buildingPartPath then return end
+
+	local pathParts = string.split(itemConfig.buildingPartPath, ".")
+	local current = ReplicatedStorage
+	local startIndex = 1
+	if pathParts[1] == "ReplicatedStorage" then startIndex = 2 end
+	for i = startIndex, #pathParts do
+		current = current:FindFirstChild(pathParts[i])
+		if not current then return end
+	end
+
+	local model = current:Clone()
+	model.Name = "Bedrock_" .. key
+
+	if model:IsA("Model") and model.PrimaryPart then
+		model:SetPrimaryPartCFrame(CFrame.new(position))
+	elseif model:IsA("BasePart") then
+		model.Position = position
+		model.Size = GlobalBreakingConfig.BlockSize
+		model.Anchored = true
+		model.CanCollide = true
+	end
+
+	model.Parent = containerFolder
+	placedBlocks[key] = model
+end
+
 local function placeBlockImmediate(x: number, y: number, z: number, materialType: string)
+	if materialType == "Bedrock" then
+		placeBedrockBlock(x, y, z)
+		return
+	end
+
 	local key = encodeKey(x, y, z)
 	if placedBlocks[key] then return end
 
@@ -215,6 +253,10 @@ local function generateMountain()
 	for y = 0, -(initialLayers - 1), -1 do
 		placeLayer(y, nil, biome)
 	end
+
+	-- Place bedrock floor at the bottom
+	local bedrockY = -(GlobalBreakingConfig.MaxDepth + 1)
+	placeLayer(bedrockY, "Bedrock")
 
 	lowestRevealedY = -(initialLayers - 1)
 end

@@ -279,6 +279,7 @@ local function WorkbenchApplication(props, hooks)
 				Recipes = recipes,
 				OnRecipeSelect = onRecipeSelect,
 				SelectedRecipeId = selectedRecipe and selectedRecipe.id or nil,
+				CountItem = countItem,
 				ZIndex = 12,
 			}),
 		}),
