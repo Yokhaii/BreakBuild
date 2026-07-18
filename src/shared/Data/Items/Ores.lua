@@ -54,6 +54,28 @@ local Ores = {
 		description = "iron ingot",
 		modelPath = "ReplicatedStorage.Assets.Items.IronIngot",
 	},
+	Charcoal = {
+		name = "Charcoal",
+		displayName = "Charcoal",
+		type = "Ore",
+		stackable = true,
+		maxStack = 64,
+		dropable = true,
+		description = "Burned wood, efficient fuel source",
+		modelPath = "ReplicatedStorage.Assets.Items.Charcoal",
+		fuelValue = 2,
+	},
+	Coal = {
+		name = "Coal",
+		displayName = "Coal",
+		type = "Ore",
+		stackable = true,
+		maxStack = 64,
+		dropable = true,
+		description = "Mined coal, efficient fuel source",
+		modelPath = "ReplicatedStorage.Assets.Items.Coal",
+		fuelValue = 2,
+	},
 }
 
 return Ores

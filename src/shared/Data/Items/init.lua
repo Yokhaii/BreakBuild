@@ -75,4 +75,17 @@ function ItemData.SearchItems(query: string): {any}
 	return results
 end
 
+function ItemData.GetFuelsByTier(minTier: number): {any}
+	local fuels = {}
+	for _, itemConfig in pairs(ItemData.Items) do
+		if itemConfig.fuelValue and itemConfig.fuelValue >= minTier then
+			table.insert(fuels, itemConfig)
+		end
+	end
+	table.sort(fuels, function(a, b)
+		return a.fuelValue < b.fuelValue
+	end)
+	return fuels
+end
+
 return ItemData

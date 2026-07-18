@@ -64,6 +64,7 @@ local Blocks = {
 		modelPath = "ReplicatedStorage.Assets.Items.Log",
 		blockSize = Vector3.new(4, 4, 4),
 		buildingPartPath = "ReplicatedStorage.Assets.BuildingParts.Log",
+		fuelValue = 1,
 	},
 
 	SprucePlank = {
@@ -77,6 +78,7 @@ local Blocks = {
 		modelPath = "ReplicatedStorage.Assets.Items.SprucePlank",
 		blockSize = Vector3.new(2, 2, 2),
 		buildingPartPath = "ReplicatedStorage.Assets.BuildingParts.SprucePlank",
+		fuelValue = 1,
 	},
 	HalfStone = {
 		name = "HalfStone",

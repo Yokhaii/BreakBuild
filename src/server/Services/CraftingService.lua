@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
 local Recipes = require(ReplicatedStorage.Shared.Data.Recipes)
+local ItemData = require(ReplicatedStorage.Shared.Data.Items)
 
 local BlueprintService
 local InventoryService
@@ -64,15 +65,53 @@ local function findItemsByName(inventory, itemName: string): (number, {{id: stri
 	return total, sources
 end
 
+local function findFuelByTier(inventory, requiredTier: number): (number, {{id: string, quantity: number, multiplier: number}})
+	local effectiveTotal = 0
+	local sources = {}
+
+	for slot = 1, HOTBAR_SIZE do
+		local item = inventory.Hotbar[slot]
+		if item then
+			local itemDef = ItemData.GetItem(item.itemName)
+			if itemDef and itemDef.fuelValue and itemDef.fuelValue >= requiredTier then
+				local multiplier = math.floor(itemDef.fuelValue / requiredTier)
+				effectiveTotal = effectiveTotal + (item.quantity * multiplier)
+				table.insert(sources, { id = item.id, quantity = item.quantity, multiplier = multiplier })
+			end
+		end
+	end
+
+	for slot = 1, BACKPACK_SIZE do
+		local item = inventory.Backpack[tostring(slot)]
+		if item then
+			local itemDef = ItemData.GetItem(item.itemName)
+			if itemDef and itemDef.fuelValue and itemDef.fuelValue >= requiredTier then
+				local multiplier = math.floor(itemDef.fuelValue / requiredTier)
+				effectiveTotal = effectiveTotal + (item.quantity * multiplier)
+				table.insert(sources, { id = item.id, quantity = item.quantity, multiplier = multiplier })
+			end
+		end
+	end
+
+	return effectiveTotal, sources
+end
+
 local function hasRequiredInputs(player: Player, recipe, quantity: number): (boolean, string?)
 	local inventory = InventoryService:GetInventory(player)
 	if not inventory then return false, "Cannot access inventory" end
 
 	for _, input in ipairs(recipe.inputs) do
-		local total = findItemsByName(inventory, input.itemName)
 		local needed = input.quantity * quantity
-		if total < needed then
-			return false, string.format("Missing %s (need %d, have %d)", input.itemName, needed, total)
+		if input.fuelTier then
+			local total = findFuelByTier(inventory, input.fuelTier)
+			if total < needed then
+				return false, string.format("Missing Tier %d fuel (need %d, have %d)", input.fuelTier, needed, total)
+			end
+		else
+			local total = findItemsByName(inventory, input.itemName)
+			if total < needed then
+				return false, string.format("Missing %s (need %d, have %d)", input.itemName, needed, total)
+			end
 		end
 	end
 
@@ -85,13 +124,25 @@ local function removeInputs(player: Player, recipe, quantity: number): boolean
 
 	for _, input in ipairs(recipe.inputs) do
 		local remaining = input.quantity * quantity
-		local _, sources = findItemsByName(inventory, input.itemName)
 
-		for _, source in ipairs(sources) do
-			if remaining <= 0 then break end
-			local toRemove = math.min(remaining, source.quantity)
-			InventoryService:RemoveItem(player, source.id, toRemove)
-			remaining = remaining - toRemove
+		if input.fuelTier then
+			local _, sources = findFuelByTier(inventory, input.fuelTier)
+			for _, source in ipairs(sources) do
+				if remaining <= 0 then break end
+				local effectivePerUnit = source.multiplier
+				local unitsNeeded = math.ceil(remaining / effectivePerUnit)
+				local toRemove = math.min(unitsNeeded, source.quantity)
+				InventoryService:RemoveItem(player, source.id, toRemove)
+				remaining = remaining - (toRemove * effectivePerUnit)
+			end
+		else
+			local _, sources = findItemsByName(inventory, input.itemName)
+			for _, source in ipairs(sources) do
+				if remaining <= 0 then break end
+				local toRemove = math.min(remaining, source.quantity)
+				InventoryService:RemoveItem(player, source.id, toRemove)
+				remaining = remaining - toRemove
+			end
 		end
 
 		if remaining > 0 then return false end

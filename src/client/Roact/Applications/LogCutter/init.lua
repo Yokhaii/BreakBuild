@@ -99,6 +99,16 @@ local function LogCutterApplication(props, hooks)
 		end
 	end
 
+	local function onRemove()
+		if not selectedRecipe then return end
+		if craftCount <= 1 then
+			setSelectedRecipe(nil)
+			setCraftCount(1)
+		else
+			setCraftCount(craftCount - 1)
+		end
+	end
+
 	-- Build top panel content
 	local topPanelChildren = {}
 
@@ -275,6 +285,7 @@ local function LogCutterApplication(props, hooks)
 				Size = UDim2.fromScale(1, 1),
 				Recipes = recipes,
 				OnRecipeSelect = onRecipeSelect,
+				OnRemove = onRemove,
 				SelectedRecipeId = selectedRecipe and selectedRecipe.id or nil,
 				CountItem = countItem,
 				ZIndex = 12,

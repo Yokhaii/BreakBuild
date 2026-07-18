@@ -19,6 +19,7 @@ local function RecipeCard(props, hooks)
 	local isLocked = props.IsLocked or false
 
 	local function onClick()
+		if isLocked then return end
 		if props.OnSelect then
 			props.OnSelect(recipe.id)
 		end
@@ -190,6 +191,36 @@ local function RecipeCard(props, hooks)
 				}),
 			}),
 		}),
+
+		RemoveButton = (isSelected and props.OnRemove) and Roact.createElement("TextButton", {
+			Size = Config.RemoveButtonSize,
+			Position = Config.RemoveButtonPosition,
+			AnchorPoint = Config.RemoveButtonAnchorPoint,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Text = Config.RemoveButtonText,
+			TextColor3 = Config.RemoveButtonTextColor,
+			TextScaled = true,
+			FontFace = Config.RemoveButtonFont,
+			ZIndex = baseZIndex + 6,
+			AutoButtonColor = false,
+			[Roact.Event.MouseButton1Click] = function()
+				props.OnRemove()
+			end,
+		}, {
+			UIAspectRatioConstraint = Roact.createElement("UIAspectRatioConstraint", {
+				AspectRatio = 1,
+			}),
+			UICorner = Roact.createElement("UICorner", {
+				CornerRadius = Config.RemoveButtonCornerRadius,
+			}),
+			StudBackground = Roact.createElement(StudBackground, {
+				ZIndex = baseZIndex + 5,
+				BackgroundColor = Config.RemoveButtonColor,
+				ImageTransparency = Config.RemoveButtonStudImageTransparency,
+				CornerRadius = Config.RemoveButtonCornerRadius,
+			}),
+		}) or nil,
 
 		LockedOverlay = isLocked and Roact.createElement("Frame", {
 			Size = UDim2.fromScale(1, 1),

@@ -40,6 +40,7 @@ local function RecipeList(props, hooks)
 			LayoutOrder = i,
 			Recipe = entry.recipe,
 			OnSelect = props.OnRecipeSelect,
+			OnRemove = isSelected and props.OnRemove or nil,
 			IsSelected = isSelected,
 			IsLocked = not canCraft,
 			ZIndex = baseZIndex,

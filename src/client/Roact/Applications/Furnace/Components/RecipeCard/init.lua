@@ -9,8 +9,11 @@ local FancyText = require(Components.Global.FancyText)
 local StudBackground = require(Components.Global.StudBackground)
 
 local Images = require(ReplicatedStorage.Shared.Data.Images)
+local ItemData = require(ReplicatedStorage.Shared.Data.Items)
 
 local Config = require(script.Config)
+
+local FUEL_CYCLE_INTERVAL = 1.5
 
 local function RecipeCard(props, hooks)
 	local baseZIndex = props.ZIndex or 1
@@ -18,7 +21,36 @@ local function RecipeCard(props, hooks)
 	local isSelected = props.IsSelected or false
 	local isLocked = props.IsLocked or false
 
+	local fuelIndex, setFuelIndex = hooks.useState(1)
+
+	hooks.useEffect(function()
+		local hasFuelInput = false
+		for _, input in ipairs(recipe.inputs or {}) do
+			if input.fuelTier then
+				hasFuelInput = true
+				break
+			end
+		end
+		if not hasFuelInput then return end
+
+		local running = true
+		task.spawn(function()
+			while running do
+				task.wait(FUEL_CYCLE_INTERVAL)
+				if not running then break end
+				setFuelIndex(function(prev)
+					return prev + 1
+				end)
+			end
+		end)
+
+		return function()
+			running = false
+		end
+	end, {})
+
 	local function onClick()
+		if isLocked then return end
 		if props.OnSelect then
 			props.OnSelect(recipe.id)
 		end
@@ -27,7 +59,22 @@ local function RecipeCard(props, hooks)
 	local materialElements = {}
 	if recipe.inputs then
 		for i, input in ipairs(recipe.inputs) do
-			local inputImage = Images[input.itemName] or ""
+			local inputImage
+			local displayQuantity = input.quantity
+			if input.fuelTier then
+				local fuels = ItemData.GetFuelsByTier(input.fuelTier)
+				if #fuels > 0 then
+					local idx = ((fuelIndex - 1) % #fuels) + 1
+					local fuel = fuels[idx]
+					inputImage = Images[fuel.name] or ""
+					local multiplier = math.floor(fuel.fuelValue / input.fuelTier)
+					displayQuantity = math.ceil(input.quantity / multiplier)
+				else
+					inputImage = ""
+				end
+			else
+				inputImage = Images[input.itemName] or ""
+			end
 			materialElements["Material_" .. i] = Roact.createElement("Frame", {
 				Size = Config.MaterialFrameSize,
 				BackgroundTransparency = 1,
@@ -54,7 +101,7 @@ local function RecipeCard(props, hooks)
 					Size = Config.MaterialAmountSize,
 					Position = Config.MaterialAmountPosition,
 					BackgroundTransparency = 1,
-					Text = tostring(input.quantity),
+					Text = tostring(displayQuantity),
 					TextColor3 = Config.MaterialTextColor,
 					TextScaled = true,
 					FontFace = Config.MaterialFont,
@@ -190,6 +237,36 @@ local function RecipeCard(props, hooks)
 				}),
 			}),
 		}),
+
+		RemoveButton = (isSelected and props.OnRemove) and Roact.createElement("TextButton", {
+			Size = Config.RemoveButtonSize,
+			Position = Config.RemoveButtonPosition,
+			AnchorPoint = Config.RemoveButtonAnchorPoint,
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Text = Config.RemoveButtonText,
+			TextColor3 = Config.RemoveButtonTextColor,
+			TextScaled = true,
+			FontFace = Config.RemoveButtonFont,
+			ZIndex = baseZIndex + 6,
+			AutoButtonColor = false,
+			[Roact.Event.MouseButton1Click] = function()
+				props.OnRemove()
+			end,
+		}, {
+			UIAspectRatioConstraint = Roact.createElement("UIAspectRatioConstraint", {
+				AspectRatio = 1,
+			}),
+			UICorner = Roact.createElement("UICorner", {
+				CornerRadius = Config.RemoveButtonCornerRadius,
+			}),
+			StudBackground = Roact.createElement(StudBackground, {
+				ZIndex = baseZIndex + 5,
+				BackgroundColor = Config.RemoveButtonColor,
+				ImageTransparency = Config.RemoveButtonStudImageTransparency,
+				CornerRadius = Config.RemoveButtonCornerRadius,
+			}),
+		}) or nil,
 
 		LockedOverlay = isLocked and Roact.createElement("Frame", {
 			Size = UDim2.fromScale(1, 1),

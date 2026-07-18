@@ -3,6 +3,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Roact = require(ReplicatedStorage.Packages.Roact)
 local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
 
+local ItemData = require(ReplicatedStorage.Shared.Data.Items)
+
 local RecipeCard = require(script.Parent.RecipeCard)
 
 local Config = require(script.Config)
@@ -29,9 +31,22 @@ local function RecipeList(props, hooks)
 		local canCraft = true
 		if countItem and entry.recipe.inputs then
 			for _, input in ipairs(entry.recipe.inputs) do
-				if countItem(input.itemName) < input.quantity then
-					canCraft = false
-					break
+				if input.fuelTier then
+					local fuels = ItemData.GetFuelsByTier(input.fuelTier)
+					local fuelTotal = 0
+					for _, fuel in ipairs(fuels) do
+						local multiplier = math.floor(fuel.fuelValue / input.fuelTier)
+						fuelTotal = fuelTotal + (countItem(fuel.name) * multiplier)
+					end
+					if fuelTotal < input.quantity then
+						canCraft = false
+						break
+					end
+				else
+					if countItem(input.itemName) < input.quantity then
+						canCraft = false
+						break
+					end
 				end
 			end
 		end
@@ -40,6 +55,7 @@ local function RecipeList(props, hooks)
 			LayoutOrder = i,
 			Recipe = entry.recipe,
 			OnSelect = props.OnRecipeSelect,
+			OnRemove = isSelected and props.OnRemove or nil,
 			IsSelected = isSelected,
 			IsLocked = not canCraft,
 			ZIndex = baseZIndex,

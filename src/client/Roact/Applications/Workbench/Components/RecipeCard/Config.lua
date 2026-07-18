@@ -54,4 +54,15 @@ return {
 	MaterialAmountPosition = UDim2.fromScale(0.45, 0),
 	MaterialTextColor = Color3.fromRGB(0, 0, 0),
 	MaterialFont = Font.fromEnum(Enum.Font.GothamMedium),
+
+	-- Remove button
+	RemoveButtonSize = UDim2.fromScale(1, 0.455),
+	RemoveButtonPosition = UDim2.fromScale(0.96, 0.5),
+	RemoveButtonAnchorPoint = Vector2.new(1, 0.5),
+	RemoveButtonColor = Color3.fromRGB(180, 50, 50),
+	RemoveButtonStudImageTransparency = 0.7,
+	RemoveButtonText = "-1",
+	RemoveButtonTextColor = Color3.fromRGB(255, 255, 255),
+	RemoveButtonFont = Font.fromEnum(Enum.Font.GothamBold),
+	RemoveButtonCornerRadius = UDim.new(0.2, 0),
 }

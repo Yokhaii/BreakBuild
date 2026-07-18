@@ -16,6 +16,7 @@ local ItemSlot = require(Components.Global.ItemSlot)
 local StudBackground = require(Components.Global.StudBackground)
 
 local Images = require(ReplicatedStorage.Shared.Data.Images)
+local ItemData = require(ReplicatedStorage.Shared.Data.Items)
 
 local RecipeList = require(script.Components.RecipeList)
 
@@ -93,6 +94,16 @@ local function FurnaceApplication(props, hooks)
 		end
 	end
 
+	local function onRemove()
+		if not selectedRecipe then return end
+		if craftCount <= 1 then
+			setSelectedRecipe(nil)
+			setCraftCount(1)
+		else
+			setCraftCount(craftCount - 1)
+		end
+	end
+
 	local topPanelChildren = {}
 
 	topPanelChildren.Title = Roact.createElement(FancyText, {
@@ -110,15 +121,44 @@ local function FurnaceApplication(props, hooks)
 	local hasInput1 = false
 	local hasInput2 = false
 	local canCraft = false
+	local input1Quantity = nil
+	local input2Quantity = nil
+
+	local function checkInput(input)
+		if input.fuelTier then
+			local fuels = ItemData.GetFuelsByTier(input.fuelTier)
+			local fuelTotal = 0
+			for _, fuel in ipairs(fuels) do
+				local multiplier = math.floor(fuel.fuelValue / input.fuelTier)
+				fuelTotal = fuelTotal + (countItem(fuel.name) * multiplier)
+			end
+			return fuelTotal >= input.quantity * craftCount
+		else
+			return countItem(input.itemName) >= input.quantity * craftCount
+		end
+	end
+
+	local function getInputImage(input)
+		if input.fuelTier then
+			local fuels = ItemData.GetFuelsByTier(input.fuelTier)
+			if #fuels > 0 then
+				return Images[fuels[1].name] or ""
+			end
+			return ""
+		end
+		return Images[input.itemName]
+	end
 
 	if selectedRecipe then
 		if selectedRecipe.inputs[1] then
-			input1Image = Images[selectedRecipe.inputs[1].itemName]
-			hasInput1 = countItem(selectedRecipe.inputs[1].itemName) >= selectedRecipe.inputs[1].quantity * craftCount
+			input1Image = getInputImage(selectedRecipe.inputs[1])
+			input1Quantity = selectedRecipe.inputs[1].quantity * craftCount
+			hasInput1 = checkInput(selectedRecipe.inputs[1])
 		end
 		if selectedRecipe.inputs[2] then
-			input2Image = Images[selectedRecipe.inputs[2].itemName]
-			hasInput2 = countItem(selectedRecipe.inputs[2].itemName) >= selectedRecipe.inputs[2].quantity * craftCount
+			input2Image = getInputImage(selectedRecipe.inputs[2])
+			input2Quantity = selectedRecipe.inputs[2].quantity * craftCount
+			hasInput2 = checkInput(selectedRecipe.inputs[2])
 		else
 			hasInput2 = true
 		end
@@ -150,7 +190,7 @@ local function FurnaceApplication(props, hooks)
 			ImageTransparency = (not hasInput1 and input1Image) and Config.MissingImageTransparency or nil,
 			BackgroundColor = (not hasInput1 and input1Image) and Config.MissingSlotBackgroundColor or nil,
 			ItemName = selectedRecipe and selectedRecipe.inputs[1] and selectedRecipe.inputs[1].itemName or nil,
-			Quantity = selectedRecipe and selectedRecipe.inputs[1] and (selectedRecipe.inputs[1].quantity * craftCount) or nil,
+			Quantity = input1Quantity,
 			OnHoverStart = onHoverStart,
 			OnHoverEnd = onHoverEnd,
 			ZIndex = 12,
@@ -164,7 +204,7 @@ local function FurnaceApplication(props, hooks)
 			ImageTransparency = (not hasInput2 and input2Image) and Config.MissingImageTransparency or nil,
 			BackgroundColor = (not hasInput2 and input2Image) and Config.MissingSlotBackgroundColor or nil,
 			ItemName = selectedRecipe and selectedRecipe.inputs[2] and selectedRecipe.inputs[2].itemName or nil,
-			Quantity = selectedRecipe and selectedRecipe.inputs[2] and (selectedRecipe.inputs[2].quantity * craftCount) or nil,
+			Quantity = input2Quantity,
 			OnHoverStart = onHoverStart,
 			OnHoverEnd = onHoverEnd,
 			ZIndex = 12,
@@ -268,6 +308,7 @@ local function FurnaceApplication(props, hooks)
 				Size = UDim2.fromScale(1, 1),
 				Recipes = recipes,
 				OnRecipeSelect = onRecipeSelect,
+				OnRemove = onRemove,
 				SelectedRecipeId = selectedRecipe and selectedRecipe.id or nil,
 				CountItem = countItem,
 				ZIndex = 12,
