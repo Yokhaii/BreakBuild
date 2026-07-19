@@ -58,6 +58,20 @@ local Structures = {
 		blueprintType = "LogCutter",
 		placementModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.LogCutter",
 	},
+
+	CompletedChest = {
+		name = "CompletedChest",
+		displayName = "Chest",
+		type = "Structure",
+		stackable = false,
+		maxStack = 1,
+		dropable = true,
+		description = "A completed chest. Place it to store items.",
+		modelPath = "Assets.Items.CompletedChest",
+		isStructure = true,
+		blueprintType = "Chest",
+		placementModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.Chest",
+	},
 }
 
 return Structures

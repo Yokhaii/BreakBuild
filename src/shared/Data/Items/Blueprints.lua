@@ -41,6 +41,19 @@ local Blueprints = {
 		isBlueprintTool = true,
 		blueprintType = "StoneCutter",
 	},
+
+	ChestBlueprint = {
+		name = "ChestBlueprint",
+		displayName = "Chest Blueprint",
+		type = "Blueprint",
+		stackable = false,
+		maxStack = 1,
+		dropable = true,
+		description = "A blueprint for building a Chest",
+		modelPath = "Assets.Items.Blueprint",
+		isBlueprintTool = true,
+		blueprintType = "Chest",
+	},
 }
 
 return Blueprints

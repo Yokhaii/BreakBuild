@@ -19,6 +19,7 @@ local Workbench = require(script.Workbench)
 local Furnace = require(script.Furnace)
 local StoneCutter = require(script.StoneCutter)
 local LogCutter = require(script.LogCutter)
+local Chest = require(script.Chest)
 
 local Blueprints = {}
 
@@ -28,6 +29,7 @@ Blueprints.Definitions = {
 	Furnace = Furnace,
 	StoneCutter = StoneCutter,
 	LogCutter = LogCutter,
+	Chest = Chest,
 }
 
 -- Get blueprint definition by ID or name (flexible lookup)

@@ -82,6 +82,7 @@ local function DevItemPicker(props, hooks)
 
 		gridChildren["Item_" .. itemConfig.name] = Roact.createElement(ItemSlot, {
 			Name = itemConfig.name,
+			ItemName = itemConfig.displayName or itemConfig.name,
 			Image = resolvedImage,
 			ZIndex = 13,
 			LayoutOrder = i,

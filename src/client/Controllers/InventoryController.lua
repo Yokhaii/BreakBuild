@@ -67,6 +67,7 @@ local dragState = {
 	dragClone = nil,
 	sourceGridIndex = nil,
 	item = nil,
+	onDrop = nil, -- optional callback(targetZone) for non-inventory drag sources (e.g. chest)
 }
 
 -- Generic drop zone registry: key = unique id, value = { gridIndex, absPosition, absSize }
@@ -99,7 +100,7 @@ local function updateDragPosition()
 	dragState.dragClone.Position = UDim2.fromOffset(mousePos.X, mousePos.Y)
 end
 
-local function findDropZoneAtPosition(mouseX, mouseY): number?
+local function findDropZoneAtPosition(mouseX, mouseY)
 	local inset = game:GetService("GuiService"):GetGuiInset()
 	local adjustedY = mouseY - inset.Y
 
@@ -110,7 +111,7 @@ local function findDropZoneAtPosition(mouseX, mouseY): number?
 			local size = obj.AbsoluteSize
 			if mouseX >= pos.X and mouseX <= pos.X + size.X
 				and adjustedY >= pos.Y and adjustedY <= pos.Y + size.Y then
-				return zone.gridIndex
+				return zone
 			end
 		end
 	end
@@ -128,15 +129,26 @@ local function cancelDrag()
 	dragState.dragClone = nil
 	dragState.sourceGridIndex = nil
 	dragState.item = nil
+	dragState.onDrop = nil
 end
 
 local function endDrag()
 	if not dragState.isDragging then return end
 
 	local mousePos = UserInputService:GetMouseLocation()
-	local targetGridIndex = findDropZoneAtPosition(mousePos.X, mousePos.Y)
+	local targetZone = findDropZoneAtPosition(mousePos.X, mousePos.Y)
+	local targetGridIndex = targetZone and targetZone.gridIndex
 
-	if targetGridIndex == -1 then
+	if dragState.onDrop then
+		-- Source has a custom handler (e.g. drag from chest slot).
+		-- Pass the target zone so the handler can decide what to do.
+		dragState.onDrop(targetZone)
+	elseif targetZone and targetZone.onDrop then
+		-- Target has a custom drop handler (e.g. chest deposit).
+		local item = dragState.item
+		local fromIdx = dragState.sourceGridIndex
+		targetZone.onDrop(item, fromIdx)
+	elseif targetGridIndex == -1 then
 		-- Trash zone: remove the item
 		local item = dragState.item
 		local fromIdx = dragState.sourceGridIndex
@@ -161,6 +173,7 @@ local function endDrag()
 	dragState.dragClone = nil
 	dragState.sourceGridIndex = nil
 	dragState.item = nil
+	dragState.onDrop = nil
 end
 
 local function toggleBackpack()
@@ -176,13 +189,20 @@ local function toggleBackpack()
 
 	if not newState then
 		local uiState = Store:getState().UIReducer
-		if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "StoneCutter" or uiState.CurrentFrame == "Furnace" then
+		if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "StoneCutter"
+			or uiState.CurrentFrame == "Furnace" or uiState.CurrentFrame == "LogCutter"
+			or uiState.CurrentFrame == "Chest" then
 			Store:dispatch(UIActions.setCurrentFrame("HUD"))
 		end
 
 		local CraftingController = Knit.GetController("CraftingController")
 		if CraftingController and CraftingController:HasActiveSession() then
 			CraftingController:EndSession()
+		end
+
+		local ChestController = Knit.GetController("ChestController")
+		if ChestController and ChestController:GetCurrentChestId() then
+			ChestController:CloseChest()
 		end
 	end
 end
@@ -228,6 +248,43 @@ end
 
 --|| Public Functions ||--
 
+-- Starts a drag from a chest slot. When dropped onto an inventory slot (gridIndex >= 1)
+-- it calls ChestController:WithdrawItem. Dropping elsewhere cancels silently.
+function InventoryController:StartDragFromChest(item)
+	if dragState.isDragging then return end
+	if not getInventoryState().BackpackOpen then return end
+
+	dragState.isDragging = true
+	dragState.sourceGridIndex = nil
+	dragState.item = item
+	dragState.onDrop = function(targetZone)
+		local targetGridIndex = targetZone and targetZone.gridIndex
+		if targetGridIndex and targetGridIndex >= 1 then
+			local ChestController = Knit.GetController("ChestController")
+			if ChestController then
+				ChestController:WithdrawItem(item.itemName, item.quantity)
+			end
+		end
+	end
+
+	local clone = createDragClone(item)
+
+	local screenGui = playerGui:FindFirstChild("GameScreenGui")
+	if screenGui then
+		clone.Parent = screenGui
+	else
+		for _, gui in ipairs(playerGui:GetChildren()) do
+			if gui:IsA("ScreenGui") then
+				clone.Parent = gui
+				break
+			end
+		end
+	end
+
+	dragState.dragClone = clone
+	updateDragPosition()
+end
+
 function InventoryController:StartDrag(gridIndex: number, item)
 	if dragState.isDragging then return end
 	if not getInventoryState().BackpackOpen then return end
@@ -254,10 +311,12 @@ function InventoryController:StartDrag(gridIndex: number, item)
 	updateDragPosition()
 end
 
-function InventoryController:RegisterDropZone(id: string, gridIndex: number, guiObject: GuiObject)
+-- onDrop: optional function(item, fromGridIndex) called instead of the default swap/trash logic.
+function InventoryController:RegisterDropZone(id: string, gridIndex: number, guiObject: GuiObject, onDrop)
 	dropZones[id] = {
 		gridIndex = gridIndex,
 		object = guiObject,
+		onDrop = onDrop,
 	}
 
 	return function()
@@ -309,13 +368,20 @@ function InventoryController:CloseBackpack()
 	Store:dispatch(InventoryActions.setDevPickerOpen(false))
 
 	local uiState = Store:getState().UIReducer
-	if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "StoneCutter" or uiState.CurrentFrame == "Furnace" then
+	if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "StoneCutter"
+		or uiState.CurrentFrame == "Furnace" or uiState.CurrentFrame == "LogCutter"
+		or uiState.CurrentFrame == "Chest" then
 		Store:dispatch(UIActions.setCurrentFrame("HUD"))
 	end
 
 	local CraftingController = Knit.GetController("CraftingController")
 	if CraftingController and CraftingController:HasActiveSession() then
 		CraftingController:EndSession()
+	end
+
+	local ChestController = Knit.GetController("ChestController")
+	if ChestController and ChestController:GetCurrentChestId() then
+		ChestController:CloseChest()
 	end
 end
 

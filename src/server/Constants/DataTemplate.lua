@@ -78,6 +78,12 @@ return {
 		NextBlueprintId = 1,
 	},
 
+	-- Chest System
+	Chest = {
+		-- Items persisted across all chest placements: array of { id, itemName, quantity }
+		Items = {},
+	},
+
 	-- Tree System
 	Tree = {
 		-- Currently selected tree type
