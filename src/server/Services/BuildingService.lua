@@ -13,6 +13,7 @@ local ItemData = require(ReplicatedStorage.Shared.Data.Items)
 local DataService
 local InventoryService
 local BlueprintService
+local ZoneService
 
 local BuildingService = Knit.CreateService({
 	Name = "BuildingService",
@@ -35,23 +36,13 @@ type BlockData = {
 	size: Vector3,
 }
 
--- References
-local buildingZone = nil
-local buildingArea = nil
-local grassPart = nil
-
 --|| Private Functions ||--
 
--- Get building zone references
-local function getBuildingZone()
-	if not buildingZone then
-		buildingZone = Workspace:FindFirstChild("BuildingZone")
-		if buildingZone then
-			buildingArea = buildingZone:FindFirstChild("BuildingArea")
-			grassPart = buildingZone:FindFirstChild("Grass")
-		end
-	end
-	return buildingZone, buildingArea, grassPart
+-- Get building zone references for a specific player
+local function getPlayerBuildingZone(player: Player)
+	local zoneData = ZoneService:GetPlayerZone(player)
+	if not zoneData then return nil, nil, nil end
+	return zoneData.zone, zoneData.area, zoneData.grass
 end
 
 -- Snap position to grid based on block size
@@ -136,8 +127,8 @@ end
 -- Check if position is within building area bounds
 -- BuildingArea origin is at floor level (0,0,0)
 -- Bounds: X/Z from -32 to +32, Y from 0 to 64
-local function isWithinBounds(position: Vector3, blockSize: Vector3): boolean
-	local _, area, _ = getBuildingZone()
+local function isWithinBounds(player: Player, position: Vector3, blockSize: Vector3): boolean
+	local _, area, _ = getPlayerBuildingZone(player)
 	if not area then
 		warn("BuildingArea not found for bounds check")
 		return false
@@ -172,7 +163,7 @@ local function hasCollision(player: Player, position: Vector3, blockSize: Vector
 	if not buildingData then return false end
 
 	-- Get BuildingArea to convert relative → world position
-	local _, area, _ = getBuildingZone()
+	local _, area, _ = getPlayerBuildingZone(player)
 	if not area then
 		warn("BuildingArea not found for collision check")
 		return false
@@ -218,8 +209,8 @@ local function hasCollision(player: Player, position: Vector3, blockSize: Vector
 end
 
 -- Check if a block is on the ground level
-local function isOnGround(position: Vector3, blockSize: Vector3): boolean
-	local _, _, grass = getBuildingZone()
+local function isOnGround(player: Player, position: Vector3, blockSize: Vector3): boolean
+	local _, _, grass = getPlayerBuildingZone(player)
 	if not grass then return false end
 
 	local grassTop = grass.Position.Y + (grass.Size.Y / 2)
@@ -236,7 +227,7 @@ local function getBlocksAt(player: Player, gridX: number, gridY: number, gridZ: 
 	if not buildingData then return {} end
 
 	-- Get BuildingArea to convert relative → world position
-	local _, area, _ = getBuildingZone()
+	local _, area, _ = getPlayerBuildingZone(player)
 	if not area then
 		warn("BuildingArea not found for getBlocksAt")
 		return {}
@@ -292,7 +283,7 @@ end
 -- Check if a block has proper support underneath
 local function hasProperSupport(player: Player, position: Vector3, blockSize: Vector3): boolean
 	-- Check if on ground first
-	if isOnGround(position, blockSize) then
+	if isOnGround(player, position, blockSize) then
 		return true
 	end
 
@@ -343,7 +334,7 @@ local function hasAdjacentBlock(player: Player, position: Vector3, blockSize: Ve
 	if not buildingData then return false end
 
 	-- Get BuildingArea to convert relative → world position
-	local _, area, _ = getBuildingZone()
+	local _, area, _ = getPlayerBuildingZone(player)
 	if not area then return false end
 
 	local areaPosition = area.Position
@@ -413,7 +404,7 @@ end
 -- Check if there's at least one block in the structure with ground support (flood fill check)
 local function hasGroundConnection(player: Player, position: Vector3, blockSize: Vector3): boolean
 	-- If this block is on ground, structure is valid
-	if isOnGround(position, blockSize) then
+	if isOnGround(player, position, blockSize) then
 		return true
 	end
 
@@ -421,7 +412,7 @@ local function hasGroundConnection(player: Player, position: Vector3, blockSize:
 	if not buildingData then return false end
 
 	-- Get BuildingArea to convert relative → world position
-	local _, area, _ = getBuildingZone()
+	local _, area, _ = getPlayerBuildingZone(player)
 	if not area then
 		warn("BuildingArea not found for hasGroundConnection")
 		return false
@@ -480,7 +471,7 @@ local function hasGroundConnection(player: Player, position: Vector3, blockSize:
 			local blockSize = Vector3.new(block.size.x, block.size.y, block.size.z)
 
 			-- If this block is on ground, we found a connection
-			if isOnGround(blockPos, blockSize) then
+			if isOnGround(player, blockPos, blockSize) then
 				return true
 			end
 
@@ -527,7 +518,7 @@ function BuildingService:CanPlaceBlock(player: Player, position: Vector3, itemNa
 	end
 
 	-- Check bounds
-	if not isWithinBounds(snappedPos, blockSize) then
+	if not isWithinBounds(player, snappedPos, blockSize) then
 		return false, "Outside building area"
 	end
 
@@ -540,7 +531,7 @@ function BuildingService:CanPlaceBlock(player: Player, position: Vector3, itemNa
 	-- A block is allowed if it lands exactly on one of the blueprint's slots.
 	-- If it overlaps slots without matching any, it's rejected.
 	if BlueprintService then
-		local _, area, _ = getBuildingZone()
+		local _, area, _ = getPlayerBuildingZone(player)
 		if area then
 			local areaPosition = area.Position
 			local areaOrigin = Vector3.new(areaPosition.X, areaPosition.Y - 32, areaPosition.Z)
@@ -644,7 +635,7 @@ function BuildingService:PlaceBlock(player: Player, position: Vector3, itemName:
 	end
 
 	-- Create block in world
-	local blockModel = self:CreateBlockInWorld(itemName, snappedPos, blockSize)
+	local blockModel = self:CreateBlockInWorld(player, itemName, snappedPos, blockSize)
 	if not blockModel then
 		-- Refund item if block creation failed
 		InventoryService:AddItem(player, itemName, 1)
@@ -657,11 +648,12 @@ function BuildingService:PlaceBlock(player: Player, position: Vector3, itemName:
 
 	-- Initialize BuildingAreaId if not set
 	if not buildingData.BuildingAreaId then
-		buildingData.BuildingAreaId = tostring(player.UserId)
+		local zoneData = ZoneService:GetPlayerZone(player)
+		buildingData.BuildingAreaId = zoneData and zoneData.zoneName or tostring(player.UserId)
 	end
 
 	-- Get BuildingArea to convert world → relative position
-	local _, area, _ = getBuildingZone()
+	local _, area, _ = getPlayerBuildingZone(player)
 	if not area then
 		warn("[BuildingService] BuildingArea not found for saving block")
 		InventoryService:AddItem(player, itemName, 1) -- Refund
@@ -738,7 +730,7 @@ function BuildingService:RemoveBlockSilent(player: Player, blockId: string): boo
 	end
 
 	-- Find and destroy the block in the world
-	local zone, _, _ = getBuildingZone()
+	local zone, _, _ = getPlayerBuildingZone(player)
 	if zone then
 		for _, child in ipairs(zone:GetChildren()) do
 			local childBlockId = child:FindFirstChild("BlockId")
@@ -788,7 +780,7 @@ function BuildingService:RemoveBlock(player: Player, blockId: string): (boolean,
 	print("[BuildingService] Block found in data:", blockData.itemName)
 
 	-- Find the block in the world
-	local zone, _, _ = getBuildingZone()
+	local zone, _, _ = getPlayerBuildingZone(player)
 	if not zone then
 		warn("[BuildingService] BuildingZone not found")
 		return false, nil
@@ -817,7 +809,7 @@ function BuildingService:RemoveBlock(player: Player, blockId: string): (boolean,
 
 	-- Check if block was inside a blueprint before removing
 	if BlueprintService and blockData.relativePosition then
-		local _, area, _ = getBuildingZone()
+		local _, area, _ = getPlayerBuildingZone(player)
 		if area then
 			local areaPosition = area.Position
 			local areaOrigin = Vector3.new(areaPosition.X, areaPosition.Y - 32, areaPosition.Z)
@@ -849,7 +841,7 @@ function BuildingService:RemoveBlock(player: Player, blockId: string): (boolean,
 end
 
 -- Create a block in the world
-function BuildingService:CreateBlockInWorld(itemName: string, position: Vector3, size: Vector3): Model?
+function BuildingService:CreateBlockInWorld(player: Player, itemName: string, position: Vector3, size: Vector3): Model?
 	local itemConfig = ItemData.GetItem(itemName)
 	if not itemConfig or not itemConfig.buildingPartPath then
 		warn("Invalid building part path for:", itemName)
@@ -893,8 +885,8 @@ function BuildingService:CreateBlockInWorld(itemName: string, position: Vector3,
 		blockModel.CanCollide = true
 	end
 
-	-- Parent to BuildingZone
-	local zone, _, _ = getBuildingZone()
+	-- Parent to player's BuildingZone
+	local zone, _, _ = getPlayerBuildingZone(player)
 	if zone then
 		blockModel.Parent = zone
 	else
@@ -910,7 +902,7 @@ function BuildingService:LoadPlacedBlocks(player: Player)
 	if not buildingData then return end
 
 	-- Get BuildingArea to convert relative → world position
-	local _, area, _ = getBuildingZone()
+	local _, area, _ = getPlayerBuildingZone(player)
 	if not area then
 		warn("[BuildingService] BuildingArea not found for loading blocks")
 		return
@@ -941,7 +933,7 @@ function BuildingService:LoadPlacedBlocks(player: Player)
 
 		local size = Vector3.new(blockData.size.x, blockData.size.y, blockData.size.z)
 
-		local blockModel = self:CreateBlockInWorld(blockData.itemName, worldPosition, size)
+		local blockModel = self:CreateBlockInWorld(player, blockData.itemName, worldPosition, size)
 		if blockModel then
 			-- Store block ID in model
 			local idValue = Instance.new("StringValue")
@@ -999,7 +991,7 @@ end
 
 -- Get building area info for client
 function BuildingService.Client:GetBuildingAreaInfo(player: Player)
-	local zone, area, grass = getBuildingZone()
+	local zone, area, grass = getPlayerBuildingZone(player)
 	if not area or not grass then
 		return nil
 	end
@@ -1016,20 +1008,14 @@ function BuildingService:KnitStart()
 	DataService = Knit.GetService("DataService")
 	InventoryService = Knit.GetService("InventoryService")
 	BlueprintService = Knit.GetService("BlueprintService")
-
-	-- Get building zone references
-	getBuildingZone()
-
-	if not buildingZone then
-		warn("BuildingZone not found in workspace!")
-	end
+	ZoneService = Knit.GetService("ZoneService")
 
 	-- Load blocks when players join
 	local Players = game:GetService("Players")
 
 	local function onPlayerAdded(player)
 		player.CharacterAdded:Connect(function()
-			task.wait(1) -- Wait for data to load
+			task.wait(1) -- Wait for data to load and zone to be assigned
 			self:LoadPlacedBlocks(player)
 		end)
 
@@ -1045,19 +1031,6 @@ function BuildingService:KnitStart()
 		onPlayerAdded(player)
 	end
 
-	-- Clean up blocks when player leaves
-	Players.PlayerRemoving:Connect(function(player)
-		-- Find and remove all blocks belonging to this player
-		local zone, _, _ = getBuildingZone()
-		if zone then
-			for _, child in ipairs(zone:GetChildren()) do
-				local playerIdValue = child:FindFirstChild("PlayerId")
-				if playerIdValue and playerIdValue.Value == player.UserId then
-					child:Destroy()
-				end
-			end
-		end
-	end)
 end
 
 return BuildingService

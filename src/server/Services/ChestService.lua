@@ -176,7 +176,7 @@ function ChestService:WithdrawItem(player: Player, itemName: string, quantity: n
 		return { success = false, reason = "Failed to remove from chest" }
 	end
 
-	local added = InventoryService:AddItem(player, itemName, removed)
+	local added = InventoryService:AddItem(player, itemName, removed, true)
 	if not added then
 		-- Rollback
 		addItem(chestData, itemName, removed, tostring(tick()))

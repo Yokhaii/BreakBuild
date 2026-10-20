@@ -31,7 +31,7 @@ local BlueprintPlacementController = Knit.CreateController({
 })
 
 -- Constants
-local PREVIEW_TRANSPARENCY = 0.5
+local PREVIEW_TRANSPARENCY = 0.55
 local GRID_SIZE = 2 -- Same as BuildingController (2-stud grid)
 local HIGHLIGHT_VALID_COLOR = Color3.fromRGB(100, 200, 255) -- Blue for valid
 local HIGHLIGHT_INVALID_COLOR = Color3.fromRGB(255, 80, 80) -- Red for invalid
@@ -40,6 +40,7 @@ local DEFAULT_BLOCK_SIZE = Vector3.new(4, 4, 4) -- Default anchor block size
 -- Services (to be initialized)
 local BlueprintService
 local InventoryService
+local ZoneService
 
 -- Placement state
 local placementMode = false
@@ -47,7 +48,8 @@ local currentBlueprintType = nil
 local currentDefinition = nil
 local anchorBlockSize = DEFAULT_BLOCK_SIZE -- Size of the anchor block
 local previewModel = nil
-local previewHighlight = nil
+local previewGlassModel = nil -- Glass copy for highlights
+local previewHighlight = nil -- Single highlight on the glass model
 local currentPosition = nil -- Position of the anchor (PrimaryPart)
 local isValidPlacement = false
 
@@ -55,7 +57,7 @@ local isValidPlacement = false
 local isStructurePlacement = false -- true when placing a completed structure, false for blueprint
 local currentStructureItemName = nil -- Item name when placing a structure
 
--- References
+-- References (populated from ZoneService assignment)
 local buildingZone = nil
 local buildingArea = nil
 
@@ -64,15 +66,15 @@ local activeBlueprints = {} -- { [blueprintId]: ClientBaseBlueprint }
 
 --|| Private Functions ||--
 
--- Get building zone references
+-- Get building zone references (populated from ZoneService assignment)
 local function getBuildingZone()
-	if not buildingZone then
-		buildingZone = Workspace:FindFirstChild("BuildingZone")
-		if buildingZone then
-			buildingArea = buildingZone:FindFirstChild("BuildingArea")
-		end
-	end
 	return buildingZone, buildingArea
+end
+
+-- Initialize zone references from assigned zone name
+local function initializeZone(zoneName)
+	buildingZone = Workspace:WaitForChild(zoneName)
+	buildingArea = buildingZone:WaitForChild("BuildingArea")
 end
 
 -- Get building area origin (floor level)
@@ -251,17 +253,40 @@ local function createPreviewModel(blueprintType, forStructure)
 	return preview
 end
 
--- Create highlight for preview
-local function createHighlight(model)
+-- Create a glass copy of the model with a single highlight on the whole glass model
+local function createGlassHighlight(model)
+	local glassCopy = model:Clone()
+	glassCopy.Name = model.Name .. "_Glass"
+
+	for _, descendant in ipairs(glassCopy:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			descendant.Transparency = 1
+			descendant.Material = Enum.Material.Glass
+			descendant.CanCollide = false
+			descendant.CanQuery = false
+			descendant.CanTouch = false
+			descendant.Anchored = true
+		end
+	end
+
+	if glassCopy:IsA("Model") and glassCopy.PrimaryPart then
+		glassCopy.PrimaryPart.Transparency = 1
+		glassCopy.PrimaryPart.Material = Enum.Material.Glass
+		glassCopy.PrimaryPart.CanCollide = false
+		glassCopy.PrimaryPart.CanQuery = false
+		glassCopy.PrimaryPart.CanTouch = false
+		glassCopy.PrimaryPart.Anchored = true
+	end
+
 	local highlight = Instance.new("Highlight")
 	highlight.FillTransparency = 0.8
 	highlight.OutlineTransparency = 0
 	highlight.OutlineColor = HIGHLIGHT_VALID_COLOR
 	highlight.FillColor = HIGHLIGHT_VALID_COLOR
-	highlight.Adornee = model
-	highlight.Parent = model
+	highlight.Adornee = glassCopy
+	highlight.Parent = glassCopy
 
-	return highlight
+	return glassCopy, highlight
 end
 
 -- Update preview position
@@ -276,6 +301,9 @@ local function updatePreview()
 		if previewModel.Parent then
 			previewModel.Parent = nil
 		end
+		if previewGlassModel and previewGlassModel.Parent then
+			previewGlassModel.Parent = nil
+		end
 		return
 	end
 
@@ -283,6 +311,9 @@ local function updatePreview()
 	if not character or not character.PrimaryPart then
 		if previewModel.Parent then
 			previewModel.Parent = nil
+		end
+		if previewGlassModel and previewGlassModel.Parent then
+			previewGlassModel.Parent = nil
 		end
 		return
 	end
@@ -299,6 +330,9 @@ local function updatePreview()
 
 	-- Build filter list
 	local filterList = {player.Character, previewModel}
+	if previewGlassModel then
+		table.insert(filterList, previewGlassModel)
+	end
 	raycastParams.FilterDescendantsInstances = filterList
 
 	-- Perform raycast
@@ -307,6 +341,9 @@ local function updatePreview()
 	if not raycastResult then
 		if previewModel.Parent then
 			previewModel.Parent = nil
+		end
+		if previewGlassModel and previewGlassModel.Parent then
+			previewGlassModel.Parent = nil
 		end
 		return
 	end
@@ -349,16 +386,26 @@ local function updatePreview()
 		previewModel:SetPrimaryPartCFrame(CFrame.new(clampedPosition))
 	end
 
-	-- Update highlight color
+	-- Update glass copy position
+	if previewGlassModel then
+		if previewGlassModel:IsA("Model") and previewGlassModel.PrimaryPart then
+			previewGlassModel:SetPrimaryPartCFrame(CFrame.new(clampedPosition))
+		end
+	end
+
+	-- Update highlight color on glass copy
 	if previewHighlight then
 		local targetColor = isValidPlacement and HIGHLIGHT_VALID_COLOR or HIGHLIGHT_INVALID_COLOR
 		previewHighlight.OutlineColor = targetColor
 		previewHighlight.FillColor = targetColor
 	end
 
-	-- Make sure preview is visible
+	-- Make sure preview and glass copy are visible
 	if not previewModel.Parent then
 		previewModel.Parent = Workspace
+	end
+	if previewGlassModel and not previewGlassModel.Parent then
+		previewGlassModel.Parent = Workspace
 	end
 end
 
@@ -422,8 +469,9 @@ local function startPlacementMode(blueprintType, forStructure, structureItemName
 		return
 	end
 
-	-- Create highlight
-	previewHighlight = createHighlight(previewModel)
+	-- Create glass copy with highlight
+	previewGlassModel, previewHighlight = createGlassHighlight(previewModel)
+	previewGlassModel.Parent = Workspace
 
 	local modeType = isStructurePlacement and "structure" or "blueprint"
 	print("[BlueprintPlacementController] Started", modeType, "placement mode for:", blueprintType)
@@ -450,9 +498,22 @@ local function stopPlacementMode()
 		previewModel = nil
 	end
 
+	-- Destroy glass copy (highlights are children, destroyed with it)
+	if previewGlassModel then
+		previewGlassModel:Destroy()
+		previewGlassModel = nil
+	end
 	previewHighlight = nil
 
 	print("[BlueprintPlacementController] Stopped placement mode")
+end
+
+-- Update all active blueprints show/hide full structure
+local function setAllBlueprintsShowAll(showAll)
+	for _, blueprint in pairs(activeBlueprints) do
+		blueprint.ShowAllBlocks = showAll
+		blueprint:UpdateVisuals()
+	end
 end
 
 -- Handle item equipped
@@ -461,6 +522,7 @@ local function onItemEquipped(slot, itemName)
 
 	if itemConfig and itemConfig.isBlueprintTool then
 		-- Blueprint tool - place a new blueprint ghost
+		setAllBlueprintsShowAll(true)
 		if itemConfig.blueprintType then
 			startPlacementMode(itemConfig.blueprintType, false, nil)
 		else
@@ -468,16 +530,24 @@ local function onItemEquipped(slot, itemName)
 		end
 	elseif itemConfig and itemConfig.isStructure then
 		-- Structure item - place a completed structure
+		setAllBlueprintsShowAll(true)
 		if itemConfig.blueprintType then
 			startPlacementMode(itemConfig.blueprintType, true, itemName)
 		else
 			warn("[BlueprintPlacementController] Structure item missing blueprintType in config:", itemName)
 		end
-	else
-		-- Not a blueprint or structure, stop placement mode if active
+	elseif itemConfig and itemConfig.type == "Block" and itemConfig.blockSize then
+		-- Building block equipped - progressive reveal
 		if placementMode then
 			stopPlacementMode()
 		end
+		setAllBlueprintsShowAll(false)
+	else
+		-- Not a block, blueprint, or structure - show full structure
+		if placementMode then
+			stopPlacementMode()
+		end
+		setAllBlueprintsShowAll(true)
 	end
 end
 
@@ -486,6 +556,7 @@ local function onItemUnequipped()
 	if placementMode then
 		stopPlacementMode()
 	end
+	setAllBlueprintsShowAll(true)
 end
 
 -- Handle mouse click for placement
@@ -650,9 +721,6 @@ local function onBlueprintBlockFilled(blueprintId, offset, blockType, isCorrect)
 	local offsetVector = Vector3.new(offset.x, offset.y, offset.z)
 	blueprint:UpdateBlockVisual(offsetVector)
 
-	-- Flash effect for feedback
-	blueprint:FlashBlockSlot(offsetVector, isCorrect)
-
 	-- If wrong block, find the block model and add highlight
 	if not isCorrect then
 		local zone = getBuildingZone()
@@ -745,9 +813,19 @@ end
 function BlueprintPlacementController:KnitStart()
 	BlueprintService = Knit.GetService("BlueprintService")
 	InventoryService = Knit.GetService("InventoryService")
+	ZoneService = Knit.GetService("ZoneService")
 
-	-- Get building zone
-	getBuildingZone()
+	-- Listen for zone assignment
+	ZoneService.ZoneAssigned:Connect(function(name)
+		initializeZone(name)
+	end)
+
+	-- Get assigned zone from server (returns a Promise)
+	ZoneService:GetAssignedZone():andThen(function(zoneName)
+		if zoneName then
+			initializeZone(zoneName)
+		end
+	end)
 
 	-- Connect to inventory signals
 	InventoryService.ItemEquipped:Connect(onItemEquipped)

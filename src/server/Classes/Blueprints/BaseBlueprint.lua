@@ -62,6 +62,9 @@ function ServerBaseBlueprint:FillBlock(offset: Vector3, blockType: string, block
 		blockId = blockId,
 	}
 
+	-- Update ghost block visuals (progressive reveal)
+	self:UpdateBlockVisuals()
+
 	-- Fire appropriate event
 	if isCorrect then
 		self.OnBlockFilled:Fire(offset, blockType, blockId)
@@ -94,114 +97,124 @@ function ServerBaseBlueprint:RemoveFilledBlock(offset: Vector3): boolean
 	end
 
 	self.FilledBlocks[offsetKey] = nil
+
+	-- Update ghost block visuals (progressive reveal)
+	self:UpdateBlockVisuals()
+
 	return true
 end
 
--- Create glass proxy parts for highlight support on transparent models
--- Roblox only shows highlights on transparent parts if they use Glass material
--- This creates a permanent highlight effect on the blueprint ghost
-function ServerBaseBlueprint:_CreateHighlightProxy(model: Model): Model
-	local proxyModel = Instance.new("Model")
-	proxyModel.Name = "HighlightProxy"
-
-	-- Clone each BasePart as a Glass material version for highlighting
-	for _, descendant in ipairs(model:GetDescendants()) do
-		if descendant:IsA("BasePart") then
-			local proxyPart = Instance.new("Part")
-			proxyPart.Name = descendant.Name .. "_Proxy"
-			proxyPart.Size = descendant.Size
-			proxyPart.CFrame = descendant.CFrame
-			proxyPart.Anchored = true
-			proxyPart.CanCollide = false
-			proxyPart.CanQuery = false
-			proxyPart.CanTouch = false
-			proxyPart.CastShadow = false
-			proxyPart.Transparency = 1 -- Fully invisible
-			proxyPart.Material = Enum.Material.Glass -- Glass allows highlights on transparent parts
-			proxyPart.Parent = proxyModel
-		end
-	end
-
-	-- Also handle PrimaryPart if it exists
-	if model.PrimaryPart then
-		local proxyPart = Instance.new("Part")
-		proxyPart.Name = "PrimaryPart_Proxy"
-		proxyPart.Size = model.PrimaryPart.Size
-		proxyPart.CFrame = model.PrimaryPart.CFrame
-		proxyPart.Anchored = true
-		proxyPart.CanCollide = false
-		proxyPart.CanQuery = false
-		proxyPart.CanTouch = false
-		proxyPart.CastShadow = false
-		proxyPart.Transparency = 1
-		proxyPart.Material = Enum.Material.Glass
-		proxyModel.PrimaryPart = proxyPart
-		proxyPart.Parent = proxyModel
-	end
-
-	proxyModel.Parent = model
+-- Create a Glass proxy part with its own Highlight as a sibling of the ghost part
+function ServerBaseBlueprint:_CreateGlassProxy(ghostPart: BasePart)
+	local proxy = Instance.new("Part")
+	proxy.Name = ghostPart.Name .. "_Glass"
+	proxy.Size = ghostPart.Size
+	proxy.CFrame = ghostPart.CFrame
+	proxy.Anchored = true
+	proxy.CanCollide = false
+	proxy.CanQuery = false
+	proxy.CanTouch = false
+	proxy.CastShadow = false
+	proxy.Material = Enum.Material.Glass
+	proxy.Transparency = 1
+	proxy.Parent = ghostPart.Parent
 
 	local highlight = Instance.new("Highlight")
-	highlight.Name = "BlueprintHighlight"
+	highlight.Name = "GlassHighlight"
 	highlight.FillTransparency = 1
-	highlight.OutlineTransparency = 0.95
-	highlight.OutlineColor = Color3.fromRGB(0, 0, 0) -- Blue outline
-	highlight.Adornee = proxyModel
-	highlight.Parent = proxyModel
+	highlight.OutlineTransparency = 0.65
+	highlight.OutlineColor = Color3.fromRGB(100, 170, 255)
+	highlight.Adornee = proxy
+	highlight.Parent = proxy
 
-	return proxyModel
+	return proxy
 end
 
--- Create the ghost model in the world
-function ServerBaseBlueprint:CreateModel(buildingAreaOrigin: Vector3): Model?
+-- Find the part in a model closest to a target world position
+local MATCH_TOLERANCE = 3
+local function findPartAtPosition(model, targetWorldPos)
+	local bestPart = nil
+	local bestDist = math.huge
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			local dist = (desc.Position - targetWorldPos).Magnitude
+			if dist < bestDist then
+				bestDist = dist
+				bestPart = desc
+			end
+		end
+	end
+	if bestDist <= MATCH_TOLERANCE then
+		return bestPart
+	end
+	return nil
+end
+
+-- Create the ghost model in the world with progressive reveal.
+-- Clones the actual blueprint model so original materials/meshes/colors are preserved.
+function ServerBaseBlueprint:CreateModel(buildingAreaOrigin: Vector3, parentZone: Instance?): Model?
 	if not self.Definition then
 		warn("[ServerBaseBlueprint] Cannot create model: no definition")
 		return nil
 	end
 
-	-- Parse model path
+	-- Resolve model from ReplicatedStorage
 	local pathParts = string.split(self.Definition.modelPath, ".")
 	local current = ReplicatedStorage
-
-	local startIndex = 1
-	if pathParts[1] == "ReplicatedStorage" then
-		startIndex = 2
-	end
-
+	local startIndex = pathParts[1] == "ReplicatedStorage" and 2 or 1
 	for i = startIndex, #pathParts do
 		current = current:FindFirstChild(pathParts[i])
 		if not current then
-			-- Model doesn't exist yet, create a simple placeholder
 			warn("[ServerBaseBlueprint] Blueprint model not found:", self.Definition.modelPath)
-			return self:_CreatePlaceholderModel(buildingAreaOrigin)
+			return nil
 		end
 	end
 
-	-- Clone the model
 	local model = current:Clone()
 	model.Name = "Blueprint_" .. self.Id
 
-	-- Calculate world position
 	local worldPosition = buildingAreaOrigin + self.RelativePosition
 
-	-- Position the model
+	-- Position the model using its PrimaryPart as anchor
 	if model:IsA("Model") and model.PrimaryPart then
 		model:SetPrimaryPartCFrame(CFrame.new(worldPosition))
-
-		-- Make ghost (transparent)
-		self:_ApplyGhostEffect(model)
 	end
 
-	-- Parent to BuildingZone
-	local buildingZone = Workspace:FindFirstChild("BuildingZone")
-	if buildingZone then
-		model.Parent = buildingZone
+	-- Make all parts non-collidable and anchored
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			desc.CanCollide = false
+			desc.Anchored = true
+			desc.CastShadow = false
+		end
+	end
+
+	-- Map each definition block to its model part by position, rename for lookup
+	local transparency = self.Definition.ghostTransparency or 0.55
+	local visibleKeys = self:GetVisibleOffsetKeys()
+
+	for _, blockReq in ipairs(self.Definition.blocks) do
+		local offsetKey = self:_OffsetToKey(blockReq.offset)
+		local targetPos = worldPosition + blockReq.offset
+		local part = findPartAtPosition(model, targetPos)
+
+		if part then
+			part.Name = "GhostBlock_" .. offsetKey
+			local isVisible = not self.FilledBlocks[offsetKey] and visibleKeys[offsetKey]
+			part.Transparency = isVisible and transparency or 1
+
+			if isVisible then
+				self:_CreateGlassProxy(part)
+			end
+		end
+	end
+
+	-- Parent to the player's zone
+	if parentZone then
+		model.Parent = parentZone
 	else
 		model.Parent = Workspace
 	end
-
-	-- Create highlight proxy (glass parts for highlight support on transparent models)
-	self:_CreateHighlightProxy(model)
 
 	-- Store blueprint ID in model
 	local idValue = Instance.new("StringValue")
@@ -225,81 +238,6 @@ function ServerBaseBlueprint:CreateModel(buildingAreaOrigin: Vector3): Model?
 	return model
 end
 
--- Create a placeholder model when the actual model doesn't exist
-function ServerBaseBlueprint:_CreatePlaceholderModel(buildingAreaOrigin: Vector3): Model
-	local model = Instance.new("Model")
-	model.Name = "Blueprint_" .. self.Id .. "_Placeholder"
-
-	-- Create a part for each required block position
-	local GRID_SIZE = 4
-	for _, blockReq in ipairs(self.Definition.blocks) do
-		local part = Instance.new("Part")
-		part.Name = "GhostBlock_" .. self:_OffsetToKey(blockReq.offset)
-		part.Size = Vector3.new(GRID_SIZE, GRID_SIZE, GRID_SIZE)
-		part.Position = buildingAreaOrigin
-			+ self.RelativePosition
-			+ blockReq.offset
-			+ Vector3.new(GRID_SIZE / 2, GRID_SIZE / 2, GRID_SIZE / 2)
-		part.Anchored = true
-		part.CanCollide = false
-		part.Transparency = self.Definition.ghostTransparency or 0.55
-		part.BrickColor = BrickColor.new("Bright blue")
-		part.Material = Enum.Material.ForceField
-		part.Parent = model
-	end
-
-	-- Set primary part
-	local firstPart = model:FindFirstChildWhichIsA("Part")
-	if firstPart then
-		model.PrimaryPart = firstPart
-	end
-
-	-- Parent to BuildingZone
-	local buildingZone = Workspace:FindFirstChild("BuildingZone")
-	if buildingZone then
-		model.Parent = buildingZone
-	else
-		model.Parent = Workspace
-	end
-
-	-- Create highlight proxy (glass parts for highlight support on transparent models)
-	self:_CreateHighlightProxy(model)
-
-	-- Store blueprint ID
-	local idValue = Instance.new("StringValue")
-	idValue.Name = "BlueprintId"
-	idValue.Value = self.Id
-	idValue.Parent = model
-
-	-- Store owner ID
-	local ownerValue = Instance.new("IntValue")
-	ownerValue.Name = "OwnerId"
-	ownerValue.Value = self.OwnerId
-	ownerValue.Parent = model
-
-	-- Store blueprint type for display name
-	local typeValue = Instance.new("StringValue")
-	typeValue.Name = "BlueprintType"
-	typeValue.Value = self.BlueprintType
-	typeValue.Parent = model
-
-	self.Model = model
-	return model
-end
-
--- Apply ghost effect to all parts in the model
-function ServerBaseBlueprint:_ApplyGhostEffect(model: Model)
-	local transparency = self.Definition and self.Definition.ghostTransparency or 0.55
-
-	for _, descendant in ipairs(model:GetDescendants()) do
-		if descendant:IsA("BasePart") then
-			descendant.Transparency = transparency
-			descendant.CanCollide = false
-			descendant.Anchored = true
-		end
-	end
-end
-
 -- Destroy the model
 function ServerBaseBlueprint:DestroyModel()
 	if self.Model then
@@ -314,30 +252,38 @@ function ServerBaseBlueprint:DestroyModel()
 	self.OnWrongBlock:Destroy()
 end
 
--- Update visual state of a specific block position (solid vs ghost)
-function ServerBaseBlueprint:UpdateBlockVisual(offset: Vector3, isFilled: boolean)
-	if not self.Model then
+-- Update visual state of all block positions (progressive reveal)
+function ServerBaseBlueprint:UpdateBlockVisuals()
+	if not self.Model or not self.Definition then
 		return
 	end
 
-	local offsetKey = self:_OffsetToKey(offset)
-	local partName = "GhostBlock_" .. offsetKey
+	local transparency = self.Definition.ghostTransparency or 0.55
+	local visibleKeys = self:GetVisibleOffsetKeys()
 
-	local part = self.Model:FindFirstChild(partName, true)
-	if part and part:IsA("BasePart") then
-		if isFilled then
-			-- Make solid
-			part.Transparency = 0
-		else
-			-- Make ghost
-			part.Transparency = self.Definition and self.Definition.ghostTransparency or 0.55
+	for _, blockReq in ipairs(self.Definition.blocks) do
+		local offsetKey = self:_OffsetToKey(blockReq.offset)
+		local partName = "GhostBlock_" .. offsetKey
+		local glassName = partName .. "_Glass"
+		local isVisible = not self.FilledBlocks[offsetKey] and visibleKeys[offsetKey]
+
+		local part = self.Model:FindFirstChild(partName)
+		if part and part:IsA("BasePart") then
+			part.Transparency = isVisible and transparency or 1
+		end
+
+		local glass = self.Model:FindFirstChild(glassName)
+		if isVisible and not glass and part then
+			self:_CreateGlassProxy(part)
+		elseif not isVisible and glass then
+			glass:Destroy()
 		end
 	end
 end
 
 -- Create the completed structure model, replacing the ghost model
 -- Returns the completed model instance
-function ServerBaseBlueprint:CreateCompletedModel(buildingAreaOrigin: Vector3): Model?
+function ServerBaseBlueprint:CreateCompletedModel(buildingAreaOrigin: Vector3, parentZone: Instance?): Model?
 	if not self.Definition then
 		warn("[ServerBaseBlueprint] Cannot create completed model: no definition")
 		return nil
@@ -392,10 +338,9 @@ function ServerBaseBlueprint:CreateCompletedModel(buildingAreaOrigin: Vector3): 
 		end
 	end
 
-	-- Parent to BuildingZone
-	local buildingZone = Workspace:FindFirstChild("BuildingZone")
-	if buildingZone then
-		model.Parent = buildingZone
+	-- Parent to the player's zone
+	if parentZone then
+		model.Parent = parentZone
 	else
 		model.Parent = Workspace
 	end

@@ -12,6 +12,7 @@ local ItemCategorization = require(ReplicatedStorage.Shared.Utils.ItemCategoriza
 
 -- Services (to be initialized)
 local DataService
+local ZoneService
 
 local InventoryService = Knit.CreateService({
 	Name = "InventoryService",
@@ -20,6 +21,7 @@ local InventoryService = Knit.CreateService({
 		ItemEquipped = Knit.CreateSignal(),
 		ItemUnequipped = Knit.CreateSignal(),
 		ItemDropped = Knit.CreateSignal(),
+		ItemGained = Knit.CreateSignal(),
 	},
 })
 
@@ -249,10 +251,10 @@ local function isPlayerInBuildingArea(player: Player): boolean
 		return false
 	end
 
-	local buildingZone = workspace:FindFirstChild("BuildingZone")
-	if not buildingZone then return false end
+	local zoneData = ZoneService:GetPlayerZone(player)
+	if not zoneData then return false end
 
-	local buildingArea = buildingZone:FindFirstChild("BuildingArea")
+	local buildingArea = zoneData.area
 	if not buildingArea then return false end
 
 	local areaPosition = buildingArea.Position
@@ -318,7 +320,7 @@ end
 
 --|| Public Functions ||--
 
-function InventoryService:AddItem(player: Player, itemName: string, quantity: number): boolean
+function InventoryService:AddItem(player: Player, itemName: string, quantity: number, suppressNotification: boolean?): boolean
 	local inventory = getInventory(player)
 	if not inventory then return false end
 
@@ -338,6 +340,9 @@ function InventoryService:AddItem(player: Player, itemName: string, quantity: nu
 				if targetHotbar[slot] and targetHotbar[slot].itemName == itemName then
 					targetHotbar[slot].quantity = targetHotbar[slot].quantity + quantity
 					fireInventoryUpdate(self, player, inventory)
+					if not suppressNotification then
+						self.Client.ItemGained:Fire(player, itemName, quantity)
+					end
 					return true
 				end
 			end
@@ -348,6 +353,9 @@ function InventoryService:AddItem(player: Player, itemName: string, quantity: nu
 			if item and item.itemName == itemName then
 				item.quantity = item.quantity + quantity
 				fireInventoryUpdate(self, player, inventory)
+				if not suppressNotification then
+					self.Client.ItemGained:Fire(player, itemName, quantity)
+				end
 				return true
 			end
 		end
@@ -366,6 +374,9 @@ function InventoryService:AddItem(player: Player, itemName: string, quantity: nu
 			if not targetHotbar[slot] then
 				targetHotbar[slot] = newItem
 				fireInventoryUpdate(self, player, inventory)
+				if not suppressNotification then
+					self.Client.ItemGained:Fire(player, itemName, quantity)
+				end
 				return true
 			end
 		end
@@ -376,6 +387,9 @@ function InventoryService:AddItem(player: Player, itemName: string, quantity: nu
 	if emptySlot then
 		bpSet(inventory.Backpack, emptySlot, newItem)
 		fireInventoryUpdate(self, player, inventory)
+		if not suppressNotification then
+			self.Client.ItemGained:Fire(player, itemName, quantity)
+		end
 		return true
 	end
 
@@ -398,6 +412,9 @@ function InventoryService:RemoveItem(player: Player, itemId: string, quantity: n
 		local item = inventory.Hotbar[hotbarSlot]
 		if item.quantity <= quantity then
 			inventory.Hotbar[hotbarSlot] = nil
+			if inventory.EquippedSlot == hotbarSlot then
+				self:UnequipItem(player)
+			end
 		else
 			item.quantity = item.quantity - quantity
 		end
@@ -894,6 +911,10 @@ local DEV_USER_IDS = {
 }
 
 function InventoryService.Client:AddItem(player: Player, itemName: string, quantity: number)
+	return self.Server:AddItem(player, itemName, quantity or 1)
+end
+
+function InventoryService.Client:AddItemAdmin(player: Player, itemName: string, quantity: number)
 	if not RunService:IsStudio() and not DEV_USER_IDS[player.UserId] then
 		return false
 	end
@@ -918,6 +939,7 @@ end
 -- KNIT START
 function InventoryService:KnitStart()
 	DataService = Knit.GetService("DataService")
+	ZoneService = Knit.GetService("ZoneService")
 
 	local function initializeInventory(player)
 		local inventory = getInventory(player)

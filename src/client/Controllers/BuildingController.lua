@@ -43,6 +43,7 @@ local GRID_SIZE = 2 -- 2-stud grid (same as server)
 local BuildingService
 local InventoryService
 local BlueprintService
+local ZoneService
 local InventoryController
 local BlueprintPlacementController
 
@@ -77,7 +78,7 @@ local playerInBuildingArea = false
 local BUILDING_FADE_ID = "BuildingArea"
 local PREVIEW_FADE_ID = "PreviewBlock"
 
--- References
+-- References (populated from ZoneService assignment)
 local buildingZone = nil
 local buildingArea = nil
 local buildingAreaInfo = nil
@@ -113,15 +114,15 @@ local function snapToGrid(position: Vector3): Vector3
 	return snapToGridForBlockSize(position, Vector3.new(4, 4, 4))
 end
 
--- Get building zone references
+-- Get building zone references (populated from ZoneService assignment)
 local function getBuildingZone()
-	if not buildingZone then
-		buildingZone = Workspace:FindFirstChild("BuildingZone")
-		if buildingZone then
-			buildingArea = buildingZone:FindFirstChild("BuildingArea")
-		end
-	end
 	return buildingZone, buildingArea
+end
+
+-- Initialize zone references from assigned zone name
+local function initializeZone(zoneName)
+	buildingZone = Workspace:WaitForChild(zoneName)
+	buildingArea = buildingZone:WaitForChild("BuildingArea")
 end
 
 -- Get all WallLimit parts from BuildingZone
@@ -339,6 +340,18 @@ end
 
 -- Create or update highlight for block, structure, or blueprint removal
 local function updateRemovalHighlight(target: Model?, targetType: string?)
+	-- Re-enable per-block glass highlights if we were hovering a blueprint
+	if hoveredBlueprint and hoveredBlueprint:IsA("Model") then
+		for _, child in ipairs(hoveredBlueprint:GetChildren()) do
+			if child.Name:match("_Glass$") then
+				local glassHighlight = child:FindFirstChild("GlassHighlight")
+				if glassHighlight then
+					glassHighlight.Enabled = true
+				end
+			end
+		end
+	end
+
 	-- Remove existing highlight and billboard
 	if removalHighlight then
 		removalHighlight:Destroy()
@@ -378,21 +391,24 @@ local function updateRemovalHighlight(target: Model?, targetType: string?)
 		targetPart = target:FindFirstChildWhichIsA("BasePart")
 	end
 
-	-- For blueprints, use the HighlightProxy model if it exists (Glass material supports highlights on transparent parts)
+	-- For blueprints, temporarily hide per-block glass highlights
 	local highlightTarget = target
 	if targetType == "blueprint" and target:IsA("Model") then
-		local highlightProxy = target:FindFirstChild("HighlightProxy")
-		if highlightProxy then
-			highlightTarget = highlightProxy
+		for _, child in ipairs(target:GetChildren()) do
+			if child.Name:match("_Glass$") then
+				local glassHighlight = child:FindFirstChild("GlassHighlight")
+				if glassHighlight then
+					glassHighlight.Enabled = false
+				end
+			end
 		end
 	end
 
-	-- Create new highlight (same style as BreakingController but with slight red fill)
+	-- Create new highlight (outline only, black)
 	local highlight = Instance.new("Highlight")
-	highlight.FillTransparency = 0.9
-	highlight.FillColor = Color3.fromRGB(255, 0, 0) -- Red fill
-	highlight.OutlineTransparency = 0.9
-	highlight.OutlineColor = Color3.new(0, 0, 0) -- Black outline
+	highlight.FillTransparency = 1
+	highlight.OutlineTransparency = 0
+	highlight.OutlineColor = Color3.new(0, 0, 0)
 	highlight.Adornee = highlightTarget
 	highlight.Parent = target
 
@@ -473,8 +489,8 @@ local function updateBlueprintPreviewMode()
 	-- Use same detection as removal mode
 	local target, targetType = detectRemovableUnderCursor()
 
-	-- Only show highlight for blueprints, structures, and the blueprints table (not blocks)
-	if targetType ~= "blueprint" and targetType ~= "structure" and targetType ~= "blueprints_table" then
+	-- Only show highlight for structures and the blueprints table (not blocks or ghost blueprints)
+	if targetType ~= "structure" and targetType ~= "blueprints_table" then
 		target = nil
 		targetType = nil
 	end
@@ -493,16 +509,9 @@ local function updateBlueprintPreviewMode()
 		return
 	end
 
-	-- For blueprints, use the HighlightProxy model if it exists (for transparent parts)
 	local highlightTarget = target
-	if targetType == "blueprint" then
-		local highlightProxy = target:FindFirstChild("HighlightProxy")
-		if highlightProxy then
-			highlightTarget = highlightProxy
-		end
-	end
 
-	-- Create highlight (black outline, no red fill - just preview)
+	-- Create highlight (black outline - just preview)
 	local highlight = Instance.new("Highlight")
 	highlight.FillTransparency = 1
 	highlight.OutlineTransparency = 0.7
@@ -1139,19 +1148,25 @@ function BuildingController:KnitStart()
 	BuildingService = Knit.GetService("BuildingService")
 	InventoryService = Knit.GetService("InventoryService")
 	BlueprintService = Knit.GetService("BlueprintService")
+	ZoneService = Knit.GetService("ZoneService")
 	InventoryController = Knit.GetController("InventoryController")
 	BlueprintPlacementController = Knit.GetController("BlueprintPlacementController")
 	DistanceFadeController = Knit.GetController("DistanceFadeController")
 	BlueprintController = Knit.GetController("BlueprintController")
 
-	-- Get building zone
-	getBuildingZone()
+	-- Listen for zone assignment (if not yet assigned or reassigned)
+	ZoneService.ZoneAssigned:Connect(function(name)
+		initializeZone(name)
+		startDistanceFade()
+	end)
 
-	-- Get building area info from server
-	buildingAreaInfo = BuildingService:GetBuildingAreaInfo()
-
-	-- Player DistanceFade on BuildingArea is always active
-	startDistanceFade()
+	-- Get assigned zone from server (returns a Promise)
+	ZoneService:GetAssignedZone():andThen(function(zoneName)
+		if zoneName then
+			initializeZone(zoneName)
+			startDistanceFade()
+		end
+	end)
 
 	-- Connect to inventory signals
 	InventoryService.ItemEquipped:Connect(onItemEquipped)

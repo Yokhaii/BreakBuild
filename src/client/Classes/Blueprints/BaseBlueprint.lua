@@ -65,6 +65,8 @@ function ClientBaseBlueprint.new(data)
 	self.Model = nil -- Reference to the model in workspace
 	self.HoverBillboard = nil -- BillboardGui for hover label
 	self.WrongBlockHighlights = {} -- { [blockId]: Highlight }
+	self._PreviouslyVisibleKeys = {} -- Track which ghost blocks were visible last update
+	self.ShowAllBlocks = true -- Show full structure when no block equipped
 	self._CraftingBillboard = nil -- BillboardGui (single, contains bar + time label)
 	self._CraftingBarFill = nil -- Fill ImageLabel inside the bar
 	self._CraftingTimeLabel = nil -- TextLabel inside the billboard
@@ -190,72 +192,91 @@ function ClientBaseBlueprint:ClearWrongBlockHighlights()
 	self.WrongBlockHighlights = {}
 end
 
--- Update visuals for all blocks (filled = solid, unfilled = transparent)
+-- Create a Glass proxy part with its own Highlight as a sibling of the ghost part
+function ClientBaseBlueprint:_CreateGlassProxy(ghostPart: BasePart)
+	local proxy = Instance.new("Part")
+	proxy.Name = ghostPart.Name .. "_Glass"
+	proxy.Size = ghostPart.Size
+	proxy.CFrame = ghostPart.CFrame
+	proxy.Anchored = true
+	proxy.CanCollide = false
+	proxy.CanQuery = false
+	proxy.CanTouch = false
+	proxy.CastShadow = false
+	proxy.Material = Enum.Material.Glass
+	proxy.Transparency = 1
+	proxy.Parent = ghostPart.Parent
+
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "GlassHighlight"
+	highlight.FillTransparency = 1
+	highlight.OutlineTransparency = 0.65
+	highlight.OutlineColor = Color3.fromRGB(100, 170, 255)
+	highlight.Adornee = proxy
+	highlight.Parent = proxy
+
+	return proxy
+end
+
+-- Blink a newly revealed ghost block and its highlight
+local function blinkGhostBlock(part, glass, ghostTransparency)
+	task.spawn(function()
+		local hl = glass and glass:FindFirstChild("GlassHighlight")
+		for i = 1, 2 do
+			if not part or not part.Parent then return end
+			part.Transparency = 1
+			if hl then hl.OutlineTransparency = 1 end
+			task.wait(0.07)
+			if not part or not part.Parent then return end
+			part.Transparency = ghostTransparency
+			if hl then hl.OutlineTransparency = 0.65 end
+			task.wait(0.07)
+		end
+	end)
+end
+
+-- Update visuals for all blocks with progressive reveal
 function ClientBaseBlueprint:UpdateVisuals()
 	if not self.Model or not self.Definition then
 		return
 	end
 
-	local GRID_SIZE = 4
+	local ghostTransparency = self.Definition.ghostTransparency or 0.55
+	local visibleKeys = self:GetVisibleOffsetKeys(self.ShowAllBlocks)
 
 	for _, blockReq in ipairs(self.Definition.blocks) do
 		local offsetKey = self:_OffsetToKey(blockReq.offset)
 		local partName = "GhostBlock_" .. offsetKey
+		local glassName = partName .. "_Glass"
+		local isVisible = not self.FilledBlocks[offsetKey] and visibleKeys[offsetKey]
+		local wasVisible = self._PreviouslyVisibleKeys[offsetKey]
+		local isNewlyVisible = isVisible and not wasVisible
 
 		local part = self.Model:FindFirstChild(partName, true)
 		if part and part:IsA("BasePart") then
-			local filledBlock = self.FilledBlocks[offsetKey]
-
-			if filledBlock then
-				-- Check if correct block type
-				if filledBlock.blockType == blockReq.blockType then
-					-- Correct block - make solid (but keep ghost since real block is placed)
-					part.Transparency = 1 -- Hide ghost, real block is visible
-				else
-					-- Wrong block - keep ghost visible with different color
-					part.Transparency = 0.5
-					part.BrickColor = BrickColor.new("Bright red")
-				end
-			else
-				-- Not filled - show ghost
-				part.Transparency = self.Definition.ghostTransparency or 0.7
-				part.BrickColor = BrickColor.new("Bright blue")
-			end
+			part.Transparency = isVisible and ghostTransparency or 1
 		end
+
+		-- Ensure glass proxy exists/doesn't exist (server may have already created it)
+		local glass = self.Model:FindFirstChild(glassName)
+		if isVisible and not glass and part then
+			glass = self:_CreateGlassProxy(part)
+		elseif not isVisible and glass then
+			glass:Destroy()
+			glass = nil
+		end
+
+		if isNewlyVisible and part then
+			blinkGhostBlock(part, glass, ghostTransparency)
+		end
+
+		self._PreviouslyVisibleKeys[offsetKey] = isVisible or nil
 	end
 end
 
--- Update visual for a single block slot
+-- Update visual for a single block slot and reveal blocks above
 function ClientBaseBlueprint:UpdateBlockVisual(offset: Vector3)
-	if not self.Model or not self.Definition then
-		return
-	end
-
-	local offsetKey = self:_OffsetToKey(offset)
-	local partName = "GhostBlock_" .. offsetKey
-
-	local part = self.Model:FindFirstChild(partName, true)
-	if not part or not part:IsA("BasePart") then
-		return
-	end
-
-	local filledBlock = self.FilledBlocks[offsetKey]
-	local requiredType = self:GetRequiredBlockAt(offset)
-
-	if filledBlock then
-		if filledBlock.blockType == requiredType then
-			-- Correct block - hide ghost
-			part.Transparency = 1
-		else
-			-- Wrong block - show red ghost
-			part.Transparency = 0.5
-			part.BrickColor = BrickColor.new("Bright red")
-		end
-	else
-		-- Not filled - show blue ghost
-		part.Transparency = self.Definition.ghostTransparency or 0.6
-		part.BrickColor = BrickColor.new("Bright blue")
-	end
+	self:UpdateVisuals()
 end
 
 -- Flash effect when block is placed (correct or wrong)
@@ -265,29 +286,42 @@ function ClientBaseBlueprint:FlashBlockSlot(offset: Vector3, isCorrect: boolean)
 	end
 
 	local offsetKey = self:_OffsetToKey(offset)
-	local partName = "GhostBlock_" .. offsetKey
+	local ghostPart = self.Model:FindFirstChild("GhostBlock_" .. offsetKey, true)
+	if not ghostPart then return end
 
-	local part = self.Model:FindFirstChild(partName, true)
-	if not part or not part:IsA("BasePart") then
-		return
-	end
-
-	-- Store original properties
-	local originalTransparency = part.Transparency
-	local originalColor = part.BrickColor
-
-	-- Flash color
 	local flashColor = isCorrect and CORRECT_BLOCK_HIGHLIGHT_COLOR or WRONG_BLOCK_HIGHLIGHT_COLOR
 
-	-- Create flash effect
+	-- Create a temporary Glass part at the block position for the flash
+	local flashPart = Instance.new("Part")
+	flashPart.Name = "FlashPart"
+	flashPart.Size = ghostPart.Size
+	flashPart.CFrame = ghostPart.CFrame
+	flashPart.Anchored = true
+	flashPart.CanCollide = false
+	flashPart.CanQuery = false
+	flashPart.CanTouch = false
+	flashPart.CastShadow = false
+	flashPart.Material = Enum.Material.Glass
+	flashPart.Transparency = 1
+	flashPart.Parent = self.Model
+
+	local flashHighlight = Instance.new("Highlight")
+	flashHighlight.Name = "FlashHighlight"
+	flashHighlight.FillTransparency = 1
+	flashHighlight.OutlineTransparency = 0
+	flashHighlight.OutlineColor = flashColor
+	flashHighlight.Adornee = flashPart
+	flashHighlight.Parent = flashPart
+
 	task.spawn(function()
 		for i = 1, 3 do
-			part.BrickColor = BrickColor.new(flashColor)
-			part.Transparency = 0.3
+			flashHighlight.OutlineTransparency = 0
 			task.wait(0.1)
-			part.BrickColor = originalColor
-			part.Transparency = originalTransparency
+			flashHighlight.OutlineTransparency = 1
 			task.wait(0.1)
+		end
+		if flashPart and flashPart.Parent then
+			flashPart:Destroy()
 		end
 	end)
 end

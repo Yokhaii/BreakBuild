@@ -19,6 +19,7 @@ local DataService
 local InventoryService
 local BuildingService
 local BreakingService
+local ZoneService
 
 local BlueprintService = Knit.CreateService({
 	Name = "BlueprintService",
@@ -41,30 +42,20 @@ local BUILDING_AREA_SIZE = Vector3.new(64, 64, 64)
 -- Active blueprint instances (by player)
 local playerBlueprints = {} -- { [Player]: { [blueprintId]: ServerBaseBlueprint } }
 
--- Building zone references
-local buildingZone = nil
-local buildingArea = nil
-
 --|| Private Functions ||--
 
--- Get building zone references
-local function getBuildingZone()
-	if not buildingZone then
-		buildingZone = Workspace:FindFirstChild("BuildingZone")
-		if buildingZone then
-			buildingArea = buildingZone:FindFirstChild("BuildingArea")
-		end
-	end
-	return buildingZone, buildingArea
+-- Get building zone references for a specific player
+local function getPlayerBuildingZone(player)
+	local zoneData = ZoneService:GetPlayerZone(player)
+	if not zoneData then return nil, nil end
+	return zoneData.zone, zoneData.area
 end
 
--- Get building area origin (floor level)
-local function getBuildingAreaOrigin()
-	local _, area = getBuildingZone()
-	if not area then return Vector3.new(0, 0, 0) end
-
-	local areaPosition = area.Position
-	return Vector3.new(areaPosition.X, areaPosition.Y - 32, areaPosition.Z)
+-- Get building area origin (floor level) for a specific player
+local function getBuildingAreaOrigin(player)
+	local origin = ZoneService:GetPlayerBuildingAreaOrigin(player)
+	if not origin then return Vector3.new(0, 0, 0) end
+	return origin
 end
 
 -- Get player's blueprint data
@@ -209,7 +200,7 @@ end
 local function onBlueprintCompleted(player, blueprint)
 	print("[BlueprintService] Blueprint completed:", blueprint.Id)
 
-	local areaOrigin = getBuildingAreaOrigin()
+	local areaOrigin = getBuildingAreaOrigin(player)
 
 	-- Remove all the individual blocks that were placed for this blueprint
 	if BuildingService and blueprint.FilledBlocks then
@@ -222,7 +213,9 @@ local function onBlueprintCompleted(player, blueprint)
 	end
 
 	-- Create the completed structure model
-	local completedModel = blueprint:CreateCompletedModel(areaOrigin)
+	local zoneData = ZoneService:GetPlayerZone(player)
+	local parentZone = zoneData and zoneData.zone or nil
+	local completedModel = blueprint:CreateCompletedModel(areaOrigin, parentZone)
 	if not completedModel then
 		warn("[BlueprintService] Failed to create completed model for:", blueprint.Id)
 		return
@@ -258,7 +251,7 @@ local function getBlueprintAABB(anchorRelative, definition)
 	return bpMin, bpMax
 end
 
--- Check if blueprint overlaps with existing blueprints
+-- Check if blueprint overlaps with existing blueprints for this player
 local function hasCollision(player, anchorRelative, definition)
 	local blueprints = playerBlueprints[player]
 	if not blueprints then return false end
@@ -292,8 +285,8 @@ function BlueprintService:PlaceBlueprint(player, position, blueprintType)
 		return false, "Unknown blueprint type"
 	end
 
-	-- Get building area origin
-	local areaOrigin = getBuildingAreaOrigin()
+	-- Get building area origin for this player
+	local areaOrigin = getBuildingAreaOrigin(player)
 
 	-- Get anchor block size for proper snapping
 	local anchorBlockSize = getAnchorBlockSize(definition)
@@ -391,7 +384,9 @@ function BlueprintService:PlaceBlueprint(player, position, blueprintType)
 	playerBlueprints[player][blueprintId] = blueprint
 
 	-- Create model in world
-	blueprint:CreateModel(areaOrigin)
+	local zoneData = ZoneService:GetPlayerZone(player)
+	local parentZone = zoneData and zoneData.zone or nil
+	blueprint:CreateModel(areaOrigin, parentZone)
 
 	-- Connect events
 	blueprint.OnCompleted:Connect(function()
@@ -412,7 +407,7 @@ function BlueprintService:GetBlueprintAtPosition(player, worldPosition)
 	local blueprints = playerBlueprints[player]
 	if not blueprints then return nil, nil end
 
-	local areaOrigin = getBuildingAreaOrigin()
+	local areaOrigin = getBuildingAreaOrigin(player)
 	local relativePos = worldPosition - areaOrigin
 
 	for _, blueprint in pairs(blueprints) do
@@ -631,7 +626,9 @@ function BlueprintService:LoadPlayerBlueprints(player)
 	local blueprintData = getBlueprintData(player)
 	if not blueprintData then return end
 
-	local areaOrigin = getBuildingAreaOrigin()
+	local areaOrigin = getBuildingAreaOrigin(player)
+	local zoneData = ZoneService:GetPlayerZone(player)
+	local parentZone = zoneData and zoneData.zone or nil
 
 	-- Initialize player blueprint table
 	playerBlueprints[player] = {}
@@ -649,7 +646,7 @@ function BlueprintService:LoadPlayerBlueprints(player)
 
 		if isAlreadyCompleted then
 			-- Create completed structure model directly
-			blueprint:CreateCompletedModel(areaOrigin)
+			blueprint:CreateCompletedModel(areaOrigin, parentZone)
 
 			-- Register as breakable
 			if BreakingService then
@@ -670,7 +667,7 @@ function BlueprintService:LoadPlayerBlueprints(player)
 			end
 		else
 			-- Create ghost model
-			blueprint:CreateModel(areaOrigin)
+			blueprint:CreateModel(areaOrigin, parentZone)
 		end
 
 		-- Connect events for future completion
@@ -809,8 +806,8 @@ function BlueprintService:PlaceStructure(player, position, structureItemName)
 		return false, "Unknown structure type"
 	end
 
-	-- Get building area origin
-	local areaOrigin = getBuildingAreaOrigin()
+	-- Get building area origin for this player
+	local areaOrigin = getBuildingAreaOrigin(player)
 
 	-- Get anchor block size for proper snapping
 	local anchorBlockSize = getAnchorBlockSize(definition)
@@ -887,7 +884,9 @@ function BlueprintService:PlaceStructure(player, position, structureItemName)
 	playerBlueprints[player][blueprintId] = blueprint
 
 	-- Create completed model directly
-	local completedModel = blueprint:CreateCompletedModel(areaOrigin)
+	local zoneData = ZoneService:GetPlayerZone(player)
+	local parentZone = zoneData and zoneData.zone or nil
+	local completedModel = blueprint:CreateCompletedModel(areaOrigin, parentZone)
 	if not completedModel then
 		-- Refund item
 		InventoryService:AddItem(player, structureItemName, 1)
@@ -977,7 +976,7 @@ function BlueprintService.Client:ValidateBlueprintPlacement(player, position, bl
 		return false, "Unknown blueprint type"
 	end
 
-	local areaOrigin = getBuildingAreaOrigin()
+	local areaOrigin = getBuildingAreaOrigin(player)
 	local anchorBlockSize = getAnchorBlockSize(definition)
 	local worldPosition = Vector3.new(position.X or position.x, position.Y or position.y, position.Z or position.z)
 	local snappedPosition = snapToGridForBlockSize(worldPosition, anchorBlockSize)
@@ -1016,13 +1015,7 @@ function BlueprintService:KnitStart()
 	InventoryService = Knit.GetService("InventoryService")
 	BuildingService = Knit.GetService("BuildingService")
 	BreakingService = Knit.GetService("BreakingService")
-
-	-- Get building zone references
-	getBuildingZone()
-
-	if not buildingZone then
-		warn("[BlueprintService] BuildingZone not found in workspace!")
-	end
+	ZoneService = Knit.GetService("ZoneService")
 
 	-- Load blueprints when players join
 	local function onPlayerAdded(player)

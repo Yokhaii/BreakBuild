@@ -5,6 +5,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local BlueprintDefinitions = require(ReplicatedStorage.Shared.Data.Blueprints)
+local ItemData = require(ReplicatedStorage.Shared.Data.Items)
 
 local BaseBlueprint = {}
 BaseBlueprint.__index = BaseBlueprint
@@ -141,6 +142,157 @@ function BaseBlueprint:GetAllRequiredOffsets(): { Vector3 }
 		table.insert(offsets, blockReq.offset)
 	end
 	return offsets
+end
+
+-- Build a neighbor map: for each block, find all face-adjacent blocks.
+-- Two blocks are face-adjacent if their bounding boxes overlap on two axes
+-- and their edges touch (gap = 0) on the third axis.
+function BaseBlueprint:_BuildNeighborMap(): { [string]: { [string]: boolean } }
+	if not self.Definition then return {} end
+
+	local neighborMap = {}
+	local TOLERANCE = 0.1
+	local DEFAULT_BLOCK_SIZE = Vector3.new(4, 4, 4)
+
+	local function addPair(key1, key2)
+		if not neighborMap[key1] then neighborMap[key1] = {} end
+		if not neighborMap[key2] then neighborMap[key2] = {} end
+		neighborMap[key1][key2] = true
+		neighborMap[key2][key1] = true
+	end
+
+	local function getBlockSize(blockReq)
+		local config = ItemData.GetItem(blockReq.blockType)
+		return config and config.blockSize or DEFAULT_BLOCK_SIZE
+	end
+
+	-- Check if two ranges overlap (exclusive — just touching doesn't count as overlap)
+	local function rangesOverlap(aMin, aMax, bMin, bMax)
+		return aMin < bMax - TOLERANCE and bMin < aMax - TOLERANCE
+	end
+
+	-- Check if two edges touch on an axis
+	local function edgesTouch(aMin, aMax, bMin, bMax)
+		return math.abs(aMax - bMin) < TOLERANCE or math.abs(bMax - aMin) < TOLERANCE
+	end
+
+	local blocks = self.Definition.blocks
+
+	for i = 1, #blocks do
+		local a = blocks[i]
+		local aSize = getBlockSize(a)
+		local aMin = a.offset - aSize / 2
+		local aMax = a.offset + aSize / 2
+
+		for j = i + 1, #blocks do
+			local b = blocks[j]
+			local bSize = getBlockSize(b)
+			local bMin = b.offset - bSize / 2
+			local bMax = b.offset + bSize / 2
+
+			-- Check each axis as the "touch" axis, other two must overlap
+			local xOverlap = rangesOverlap(aMin.X, aMax.X, bMin.X, bMax.X)
+			local yOverlap = rangesOverlap(aMin.Y, aMax.Y, bMin.Y, bMax.Y)
+			local zOverlap = rangesOverlap(aMin.Z, aMax.Z, bMin.Z, bMax.Z)
+			local xTouch = edgesTouch(aMin.X, aMax.X, bMin.X, bMax.X)
+			local yTouch = edgesTouch(aMin.Y, aMax.Y, bMin.Y, bMax.Y)
+			local zTouch = edgesTouch(aMin.Z, aMax.Z, bMin.Z, bMax.Z)
+
+			if (xTouch and yOverlap and zOverlap)
+				or (yTouch and xOverlap and zOverlap)
+				or (zTouch and xOverlap and yOverlap) then
+				addPair(self:_OffsetToKey(a.offset), self:_OffsetToKey(b.offset))
+			end
+		end
+	end
+
+	return neighborMap
+end
+
+-- Get offset keys that should be visible as ghost blocks (progressive reveal).
+-- The anchor block (0,0,0) is always visible. Filled blocks reveal their face-neighbors,
+-- but a block is only shown if every block below it in the same column is filled.
+-- If showAll is true, all unfilled blocks are visible.
+function BaseBlueprint:GetVisibleOffsetKeys(showAll: boolean?): { [string]: boolean }
+	if not self.Definition then return {} end
+
+	-- Show all unfilled blocks when no building block is equipped
+	if showAll then
+		local visible = {}
+		for _, blockReq in ipairs(self.Definition.blocks) do
+			visible[self:_OffsetToKey(blockReq.offset)] = true
+		end
+		return visible
+	end
+
+	local neighborMap = self:_BuildNeighborMap()
+
+	local offsetKeyToBlock = {}
+	for _, blockReq in ipairs(self.Definition.blocks) do
+		offsetKeyToBlock[self:_OffsetToKey(blockReq.offset)] = blockReq
+	end
+
+	local function getBlockSize(blockReq)
+		local config = ItemData.GetItem(blockReq.blockType)
+		return config and config.blockSize or Vector3.new(4, 4, 4)
+	end
+
+	-- A block has support if no unfilled block exists directly below it (touching on Y, overlapping on X/Z)
+	local TOLERANCE = 0.1
+	local function hasSupport(offsetKey)
+		local blockReq = offsetKeyToBlock[offsetKey]
+		if not blockReq then return false end
+
+		local size = getBlockSize(blockReq)
+		local myMinY = blockReq.offset.Y - size.Y / 2
+		local myMinX = blockReq.offset.X - size.X / 2
+		local myMaxX = blockReq.offset.X + size.X / 2
+		local myMinZ = blockReq.offset.Z - size.Z / 2
+		local myMaxZ = blockReq.offset.Z + size.Z / 2
+
+		for _, other in ipairs(self.Definition.blocks) do
+			if other == blockReq then continue end
+			local oSize = getBlockSize(other)
+			local oMaxY = other.offset.Y + oSize.Y / 2
+			-- Is this block directly below? (its top touches our bottom, and overlaps on X/Z)
+			if math.abs(oMaxY - myMinY) < TOLERANCE then
+				local oMinX = other.offset.X - oSize.X / 2
+				local oMaxX = other.offset.X + oSize.X / 2
+				local oMinZ = other.offset.Z - oSize.Z / 2
+				local oMaxZ = other.offset.Z + oSize.Z / 2
+				if oMinX < myMaxX - TOLERANCE and myMinX < oMaxX - TOLERANCE
+					and oMinZ < myMaxZ - TOLERANCE and myMinZ < oMaxZ - TOLERANCE then
+					local oKey = self:_OffsetToKey(other.offset)
+					if not self.FilledBlocks[oKey] then
+						return false
+					end
+				end
+			end
+		end
+		return true
+	end
+
+	local visible = {}
+
+	-- Anchor block always visible
+	local anchorKey = self:_OffsetToKey(Vector3.new(0, 0, 0))
+	if offsetKeyToBlock[anchorKey] then
+		visible[anchorKey] = true
+	end
+
+	-- Neighbors of filled blocks become visible, but only if supported from below
+	for _, blockReq in ipairs(self.Definition.blocks) do
+		local key = self:_OffsetToKey(blockReq.offset)
+		if self.FilledBlocks[key] and neighborMap[key] then
+			for neighborKey, _ in pairs(neighborMap[key]) do
+				if hasSupport(neighborKey) then
+					visible[neighborKey] = true
+				end
+			end
+		end
+	end
+
+	return visible
 end
 
 -- Serialize blueprint data for persistence

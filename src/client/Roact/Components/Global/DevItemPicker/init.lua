@@ -62,7 +62,7 @@ local function DevItemPicker(props, hooks)
 	local function handleItemClick(itemName)
 		local InventoryService = Knit.GetService("InventoryService")
 		if InventoryService then
-			InventoryService:AddItem(itemName, 1)
+			InventoryService:AddItemAdmin(itemName, 1)
 		end
 	end
 
