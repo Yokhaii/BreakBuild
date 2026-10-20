@@ -77,9 +77,9 @@ function AnimationCtrl:GetAnimationType(AnimationName)
 	local regularAnim = findModuleRecursive(AnimationDataFolder, AnimationName)
 	local moonAnim = findModuleRecursive(MoonAnimationDataFolder, AnimationName)
 	local noRigAnim = findModuleRecursive(NoRigAnimationDataFolder, AnimationName)
-	
+
 	local animationData, animationType
-	
+
 	if regularAnim then
 		animationData = require(regularAnim)
 		animationType = "Basic"
@@ -92,127 +92,127 @@ function AnimationCtrl:GetAnimationType(AnimationName)
 	else
 		return nil, nil
 	end
-	
+
 	return animationType, animationData
 end
 
 function AnimationCtrl:GetAnimationKey(AnimationName, CharacterOrTarget)
-    local animationType, _ = self:GetAnimationType(AnimationName)
-    
-    if not animationType then
-        return nil
-    end
-    
-    -- For NoRig animations
-    if animationType == "NoRig" then
-        -- For Instances, use full name for unique key
-        if typeof(CharacterOrTarget) == "Instance" then
-            return AnimationName .. "_norig_" .. CharacterOrTarget:GetFullName()
-        else
-            -- For CFrame or Vector3 (legacy support), use string representation
-            return AnimationName .. "_norig_" .. tostring(CharacterOrTarget)
-        end
-    -- For Basic and Moon animations
-    else
-        if typeof(CharacterOrTarget) ~= "Instance" or not (CharacterOrTarget:IsA("Model")) then
-            warn("Character is required for Basic and Moon animations")
-            return nil
-        end
-        
-        return AnimationName .. "_" .. CharacterOrTarget:GetFullName()
-    end
+	local animationType, _ = self:GetAnimationType(AnimationName)
+
+	if not animationType then
+		return nil
+	end
+
+	-- For NoRig animations
+	if animationType == "NoRig" then
+		-- For Instances, use full name for unique key
+		if typeof(CharacterOrTarget) == "Instance" then
+			return AnimationName .. "_norig_" .. CharacterOrTarget:GetFullName()
+		else
+			-- For CFrame or Vector3 (legacy support), use string representation
+			return AnimationName .. "_norig_" .. tostring(CharacterOrTarget)
+		end
+	-- For Basic and Moon animations
+	else
+		if typeof(CharacterOrTarget) ~= "Instance" or not (CharacterOrTarget:IsA("Model")) then
+			warn("Character is required for Basic and Moon animations")
+			return nil
+		end
+
+		return AnimationName .. "_" .. CharacterOrTarget:GetFullName()
+	end
 end
 
 -- NEW FUNCTION: Set up automatic cleanup when an instance is destroyed
 function AnimationCtrl:SetupInstanceDestroyConnection(instance)
-    -- Only set up connections for Instances
-    if typeof(instance) ~= "Instance" then
-        return
-    end
-    
-    -- Check if we already have a connection for this instance
-    if self.InstanceConnections[instance] then
-        return
-    end
-    
-    -- Create a new connection
-    self.InstanceConnections[instance] = instance.Destroying:Connect(function()
-        -- Clean up all animations related to this instance
-        self:CleanupInstanceAnimations(instance)
-        -- Remove the connection
-        self.InstanceConnections[instance]:Disconnect()
-        self.InstanceConnections[instance] = nil
-    end)
+	-- Only set up connections for Instances
+	if typeof(instance) ~= "Instance" then
+		return
+	end
+
+	-- Check if we already have a connection for this instance
+	if self.InstanceConnections[instance] then
+		return
+	end
+
+	-- Create a new connection
+	self.InstanceConnections[instance] = instance.Destroying:Connect(function()
+		-- Clean up all animations related to this instance
+		self:CleanupInstanceAnimations(instance)
+		-- Remove the connection
+		self.InstanceConnections[instance]:Disconnect()
+		self.InstanceConnections[instance] = nil
+	end)
 end
 
 -- NEW FUNCTION: Clean up all animations for a specific instance
 function AnimationCtrl:CleanupInstanceAnimations(instance)
-    if typeof(instance) ~= "Instance" then
-        return
-    end
-    
-    local instancePath = instance:GetFullName()
-    local animationsToRemove = {}
-    
-    -- Find all animation keys that contain this instance's path
-    for key, animation in pairs(self.Animations) do
-        if key:find(instancePath, 1, true) then
-            animation:stop()
-            animation:destroy()
-            table.insert(animationsToRemove, key)
-        end
-    end
-    
-    -- Remove the animations from the table
-    for _, key in ipairs(animationsToRemove) do
-        self.Animations[key] = nil
-    end
-    
-    -- Log cleanup for debugging
-    if #animationsToRemove > 0 then
-        print("Cleaned up " .. #animationsToRemove .. " animations for " .. instancePath)
-    end
+	if typeof(instance) ~= "Instance" then
+		return
+	end
+
+	local instancePath = instance:GetFullName()
+	local animationsToRemove = {}
+
+	-- Find all animation keys that contain this instance's path
+	for key, animation in pairs(self.Animations) do
+		if key:find(instancePath, 1, true) then
+			animation:stop()
+			animation:destroy()
+			table.insert(animationsToRemove, key)
+		end
+	end
+
+	-- Remove the animations from the table
+	for _, key in ipairs(animationsToRemove) do
+		self.Animations[key] = nil
+	end
+
+	-- Log cleanup for debugging
+	if #animationsToRemove > 0 then
+		-- print("Cleaned up " .. #animationsToRemove .. " animations for " .. instancePath)
+	end
 end
 
 function AnimationCtrl:GetOrCreateAnimation(AnimationName, CharacterOrTarget)
-    local animationType, animationData = self:GetAnimationType(AnimationName)
-    
-    if not animationType or not animationData then
-        warn("Animation data not found for: " .. AnimationName)
-        return nil
-    end
-    
-    local key = self:GetAnimationKey(AnimationName, CharacterOrTarget)
-    if not key then
-        return nil
-    end
-    
-    if self.Animations[key] then
-        return self.Animations[key]
-    end
-    
-    local animation
-    
-    if animationType == "Basic" then
-        animation = AnimationModule.new(animationData.Id, animationData, CharacterOrTarget)
-    elseif animationType == "Moon" then
-        animation = MoonAnimationModule.new(animationData.Id, animationData, CharacterOrTarget)
-    elseif animationType == "NoRig" then
-        -- Now directly pass the target to NoRigAnimationModule
-        animation = NoRigAnimationModule.new(animationData.Id, animationData, CharacterOrTarget)
-    else
-        warn("Unknown animation type for animation: " .. AnimationName)
-        return nil
-    end
-    
-    -- Set up automatic cleanup if character/target is an Instance
-    if typeof(CharacterOrTarget) == "Instance" then
-        self:SetupInstanceDestroyConnection(CharacterOrTarget)
-    end
-    
-    animation:preload()
-    self.Animations[key] = animation
-    return animation
+	local animationType, animationData = self:GetAnimationType(AnimationName)
+
+	if not animationType or not animationData then
+		warn("Animation data not found for: " .. AnimationName)
+		return nil
+	end
+
+	local key = self:GetAnimationKey(AnimationName, CharacterOrTarget)
+	if not key then
+		return nil
+	end
+
+	if self.Animations[key] then
+		return self.Animations[key]
+	end
+
+	local animation
+
+	if animationType == "Basic" then
+		animation = AnimationModule.new(animationData.Id, animationData, CharacterOrTarget)
+	elseif animationType == "Moon" then
+		animation = MoonAnimationModule.new(animationData.Id, animationData, CharacterOrTarget)
+	elseif animationType == "NoRig" then
+		-- Now directly pass the target to NoRigAnimationModule
+		animation = NoRigAnimationModule.new(animationData.Id, animationData, CharacterOrTarget)
+	else
+		warn("Unknown animation type for animation: " .. AnimationName)
+		return nil
+	end
+
+	-- Set up automatic cleanup if character/target is an Instance
+	if typeof(CharacterOrTarget) == "Instance" then
+		self:SetupInstanceDestroyConnection(CharacterOrTarget)
+	end
+
+	animation:preload()
+	self.Animations[key] = animation
+	return animation
 end
 
 function AnimationCtrl:GetAnimation(AnimationName, CharacterOrPosition)
@@ -220,7 +220,7 @@ function AnimationCtrl:GetAnimation(AnimationName, CharacterOrPosition)
 	if not key then
 		return nil
 	end
-	
+
 	return self.Animations[key]
 end
 
@@ -231,11 +231,11 @@ function AnimationCtrl:PlayAnim(AnimationName, CharacterOrPosition)
 		warn("Animation not found: " .. AnimationName)
 		return nil
 	end
-	
+
 	if not CharacterOrPosition and animationType ~= "NoRig" then
 		CharacterOrPosition = player.Character
 	end
-	
+
 	local animation = self:GetOrCreateAnimation(AnimationName, CharacterOrPosition)
 	if animation then
 		animation:play()
@@ -274,23 +274,23 @@ function AnimationCtrl:PlayAndDestroyAnimation(AnimationName, CharacterOrPositio
 end
 
 function AnimationCtrl:PlayNoRigAnimAtTarget(AnimationName, Target)
-    if not Target then
-        warn("Target is required for PlayNoRigAnimAtTarget")
-        return nil
-    end
-    
-    -- Directly use the target without conversion
-    return self:PlayAnim(AnimationName, Target)
+	if not Target then
+		warn("Target is required for PlayNoRigAnimAtTarget")
+		return nil
+	end
+
+	-- Directly use the target without conversion
+	return self:PlayAnim(AnimationName, Target)
 end
 
 function AnimationCtrl:PlayNoRigAnimAtPosition(AnimationName, Position)
-    if not Position then
-        warn("Position is required for PlayNoRigAnimAtPosition")
-        return nil
-    end
-    
-    -- For backward compatibility
-    return self:PlayNoRigAnimAtTarget(AnimationName, Position)
+	if not Position then
+		warn("Position is required for PlayNoRigAnimAtPosition")
+		return nil
+	end
+
+	-- For backward compatibility
+	return self:PlayNoRigAnimAtTarget(AnimationName, Position)
 end
 
 function AnimationCtrl:PreloadAnimation(AnimationName, CharacterOrPosition)
@@ -299,7 +299,7 @@ function AnimationCtrl:PreloadAnimation(AnimationName, CharacterOrPosition)
 		warn("Animation not found: " .. AnimationName)
 		return nil
 	end
-	
+
 	if not CharacterOrPosition and animationType ~= "NoRig" then
 		CharacterOrPosition = player.Character
 		if not CharacterOrPosition then
@@ -315,7 +315,7 @@ function AnimationCtrl:DestroyAnimation(AnimationName, CharacterOrPosition)
 	local animation = self:GetAnimation(AnimationName, CharacterOrPosition)
 	if animation then
 		animation:destroy()
-		
+
 		local key = self:GetAnimationKey(AnimationName, CharacterOrPosition)
 		if key then
 			self.Animations[key] = nil
@@ -354,50 +354,50 @@ function AnimationCtrl:PlayOnlyItemsMoonAnim(AnimationName, CharacterOrPosition,
 end
 
 function AnimationCtrl:PlayRequestedAnimFromServ(AnimationName, CharacterOrTarget, cameraReplication)
-    local animationType, animationData = self:GetAnimationType(AnimationName)
-    
-    if not animationType or not animationData then
-        warn("Animation data not found for: " .. AnimationName)
-        return
-    end
-    
-    if animationType == "NoRig" then
-        -- For NoRig, we just need a target (can be any instance, CFrame, or Vector3)
-        if CharacterOrTarget then
-            self:PlayAnim(AnimationName, CharacterOrTarget)
-        else
-            warn("Target is required for NoRig animations")
-        end
-    else
-        -- For Basic and Moon, we need a character
-        if typeof(CharacterOrTarget) == "Instance" and CharacterOrTarget:IsA("Model") then
-            local playerForAnim = Players:GetPlayerFromCharacter(CharacterOrTarget)
-            
-            if playerForAnim then
-                if animationType == "Basic" then
-                    return
-                elseif playerForAnim ~= player then
-                    self:PlayOnlyItemsMoonAnim(AnimationName, CharacterOrTarget, cameraReplication)
-                else
-                    self:PlayAnim(AnimationName, CharacterOrTarget)
-                end
-            else
-                self:PlayAnim(AnimationName, CharacterOrTarget)
-            end
-        else
-            warn("Character is required for Basic and Moon animations")
-        end
-    end
+	local animationType, animationData = self:GetAnimationType(AnimationName)
+
+	if not animationType or not animationData then
+		warn("Animation data not found for: " .. AnimationName)
+		return
+	end
+
+	if animationType == "NoRig" then
+		-- For NoRig, we just need a target (can be any instance, CFrame, or Vector3)
+		if CharacterOrTarget then
+			self:PlayAnim(AnimationName, CharacterOrTarget)
+		else
+			warn("Target is required for NoRig animations")
+		end
+	else
+		-- For Basic and Moon, we need a character
+		if typeof(CharacterOrTarget) == "Instance" and CharacterOrTarget:IsA("Model") then
+			local playerForAnim = Players:GetPlayerFromCharacter(CharacterOrTarget)
+
+			if playerForAnim then
+				if animationType == "Basic" then
+					return
+				elseif playerForAnim ~= player then
+					self:PlayOnlyItemsMoonAnim(AnimationName, CharacterOrTarget, cameraReplication)
+				else
+					self:PlayAnim(AnimationName, CharacterOrTarget)
+				end
+			else
+				self:PlayAnim(AnimationName, CharacterOrTarget)
+			end
+		else
+			warn("Character is required for Basic and Moon animations")
+		end
+	end
 end
 
 -- NEW FUNCTION: Clean up all instance connections when the controller is being destroyed
 function AnimationCtrl:CleanupAllConnections()
-    for instance, connection in pairs(self.InstanceConnections) do
-        if connection and typeof(connection) == "RBXScriptConnection" then
-            connection:Disconnect()
-        end
-    end
-    self.InstanceConnections = {}
+	for instance, connection in pairs(self.InstanceConnections) do
+		if connection and typeof(connection) == "RBXScriptConnection" then
+			connection:Disconnect()
+		end
+	end
+	self.InstanceConnections = {}
 end
 
 --|| Knit Lifecycle ||--
@@ -408,6 +408,14 @@ function AnimationCtrl:KnitInit()
 		self:PlayRequestedAnimFromServ(animationName, CharacterOrPosition, cameraReplication)
 	end)
 
+	AnimationService.PlayMoonBehaviorsSignal:Connect(function(animationName, model, cameraReplication)
+		self:PlayOnlyItemsMoonAnim(animationName, model, cameraReplication)
+	end)
+
+	AnimationService.StopAnimSignal:Connect(function(animationName, model)
+		self:StopAnim(animationName, model)
+	end)
+
 	Players.PlayerRemoving:Connect(function(playerDis)
 		self:CleanupPlayerAnimations(playerDis)
 	end)
@@ -415,15 +423,15 @@ end
 
 -- NEW: Clean up when the controller is being destroyed (if applicable in your framework)
 function AnimationCtrl:KnitStop()
-    self:CleanupAllConnections()
-    
-    -- Clean up all animations
-    for key, animation in pairs(self.Animations) do
-        if animation then
-            animation:destroy()
-        end
-    end
-    self.Animations = {}
+	self:CleanupAllConnections()
+
+	-- Clean up all animations
+	for key, animation in pairs(self.Animations) do
+		if animation then
+			animation:destroy()
+		end
+	end
+	self.Animations = {}
 end
 
 return AnimationCtrl

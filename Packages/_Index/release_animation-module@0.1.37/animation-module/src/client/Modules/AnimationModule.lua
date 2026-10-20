@@ -1,4 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ContentProvider = game:GetService("ContentProvider")
 
 --|| Imports ||--
 local ImportFolder = ReplicatedStorage:FindFirstChild("Packages")
@@ -34,8 +35,8 @@ function AnimationModule.new(animationId, animationData, customModel)
 	self.weight = animationData.Weight or 1
 	self.isExclusive = animationData.isExclusive or false
 	self.speed = animationData.Speed or 1
-	self.fadeTime = animationData.FadeTime or 0.1
 	self.loop = animationData.Loop or false
+	self.fadeTime = animationData.FadeTime or 0
 	self.finished = Signal.new()
 	self.stoppedAnimations = {}
 	return self
@@ -65,6 +66,10 @@ end
 
 function AnimationModule:preload()
 	if self.isLoaded then
+		return
+	end
+
+	if self.animationId == "rbxassetid://0" or self.animationId == "" then
 		return
 	end
 
@@ -99,7 +104,10 @@ function AnimationModule:play()
 	self.animationTrack:Play(self.fadeTime, self.weight, self.speed)
 	self.isPlaying = true
 
-	self.animationTrack.Stopped:Connect(function()
+	if self._stoppedConnection then
+		self._stoppedConnection:Disconnect()
+	end
+	self._stoppedConnection = self.animationTrack.Stopped:Connect(function()
 		self.isPlaying = false
 		self.finished:Fire()
 	end)
@@ -123,6 +131,10 @@ function AnimationModule:stop()
 end
 
 function AnimationModule:destroy()
+	if self._stoppedConnection then
+		self._stoppedConnection:Disconnect()
+		self._stoppedConnection = nil
+	end
 	self:stop()
 	if self.animationTrack then
 		self.animationTrack:Destroy()

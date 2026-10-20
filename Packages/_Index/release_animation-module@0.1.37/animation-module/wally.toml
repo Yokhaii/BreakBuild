@@ -1,6 +1,6 @@
 [package]
 name = "release/animation-module"
-version = "0.1.26"
+version = "0.1.37"
 registry = "https://github.com/Rivrs-Roblox/wally-index"
 realm = "shared"
 

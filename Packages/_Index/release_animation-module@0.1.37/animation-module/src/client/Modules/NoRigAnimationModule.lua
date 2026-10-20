@@ -33,6 +33,7 @@ function NoRigAnimationModule.new(animationId, animationData, target)
 	self.partMappings = {} -- For BaseParts in the animation that map to parts in the target
 	self.modelMappings = {} -- For Models in the animation that map to models in the target
 	self.particleEmitters = {} -- For ParticleEmitters in the animation
+	self.beams = {} -- For Beams in the animation
 	self.createdAssets = {} -- NEW: For tracking assets we created (for cleanup)
 
 	self.behaviors = {}
@@ -85,37 +86,50 @@ function NoRigAnimationModule:_getTargetCFrame()
 end
 
 -- Store the original properties of parts to restore later
+-- Only stores properties for parts/models that have behaviors that modify them
 function NoRigAnimationModule:_storeOriginalProperties()
 	if typeof(self.target) ~= "Instance" then
 		return
 	end
 
-	local parts = {}
-
-	if self.target:IsA("BasePart") then
-		parts = { self.target }
-	elseif self.target:IsA("Model") then
-		for _, part in ipairs(self.target:GetDescendants()) do
-			if part:IsA("BasePart") then
-				table.insert(parts, part)
-			end
-		end
-	end
-
-	for _, part in ipairs(parts) do
-		self.originalProperties[part] = {
-			CFrame = part.CFrame,
-			Size = part.Size,
-			Transparency = part.Transparency,
-		}
-	end
-
+	-- Only store camera properties if there are camera behaviors
 	if self.cameraPos then
 		self.originalProperties["camera"] = {
 			CFrame = self.camera.CFrame,
 			FieldOfView = self.camera.FieldOfView,
 			CameraType = self.camera.CameraType,
 		}
+	end
+
+	-- Part and model properties are stored in _storePartOriginalProperties
+	-- which is called only when a part/model mapping is created with behaviors
+end
+
+-- Store original properties for a specific part (called when setting up parts with behaviors)
+function NoRigAnimationModule:_storePartOriginalProperties(part: BasePart)
+	if not part or self.originalProperties[part] then
+		return
+	end
+	self.originalProperties[part] = {
+		CFrame = part.CFrame,
+		Size = part.Size,
+		Transparency = part.Transparency,
+	}
+end
+
+-- Store original properties for a model's parts (called when setting up models with behaviors)
+function NoRigAnimationModule:_storeModelOriginalProperties(model: Model)
+	if not model then
+		return
+	end
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") and not self.originalProperties[part] then
+			self.originalProperties[part] = {
+				CFrame = part.CFrame,
+				Size = part.Size,
+				Transparency = part.Transparency,
+			}
+		end
 	end
 end
 
@@ -192,6 +206,7 @@ function NoRigAnimationModule:_setupBaseParts(index, item)
 	local existingPart = self:_findPartInTarget(item.Name)
 	if existingPart then
 		self.partMappings[index] = existingPart
+		self:_registerEmittersInPart(existingPart)
 		return
 	end
 
@@ -220,6 +235,25 @@ function NoRigAnimationModule:_setupBaseParts(index, item)
 	-- Store for cleanup
 	table.insert(self.createdAssets, newPart)
 	self.partMappings[index] = newPart
+
+	-- Register any emitters bundled inside this part
+	self:_registerEmittersInPart(newPart)
+end
+
+-- Register ParticleEmitters found inside a part by matching against BundledInPart items
+function NoRigAnimationModule:_registerEmittersInPart(part)
+	for itemIndex, itemData in pairs(self.animationData.Items) do
+		if itemData.Type == "ParticleEmitter" and itemData.BundledInPart == part.Name
+			and not self.particleEmitters[itemIndex] then
+			local emitter = part:FindFirstChild(itemData.Name, true)
+			if emitter and emitter:IsA("ParticleEmitter") then
+				emitter.Enabled = false
+				self.particleEmitters[itemIndex] = emitter
+			else
+				warn("Bundled emitter not found inside part:", part.Name, "->", itemData.Name)
+			end
+		end
+	end
 end
 
 -- NEW: Setup Models from assets into the target model
@@ -280,6 +314,16 @@ function NoRigAnimationModule:_setupModels(index, item)
 end
 
 function NoRigAnimationModule:_setupParticleEmitters(index, item)
+	-- Already registered by _registerEmittersInPart when the BasePart was set up
+	if self.particleEmitters[index] then
+		return
+	end
+
+	-- Bundled inside a BasePart item — will be registered when that part is set up
+	if item.BundledInPart then
+		return
+	end
+
 	if not self.target or not self.target:IsA("Model") then
 		warn("Target must be a Model to setup ParticleEmitters")
 		return
@@ -287,7 +331,6 @@ function NoRigAnimationModule:_setupParticleEmitters(index, item)
 
 	local partName = item.Place
 	local part = self:_findPartInTarget(partName)
-	
 
 	if not part then
 		warn("Part not found for ParticleEmitter placement:", partName)
@@ -314,19 +357,67 @@ function NoRigAnimationModule:_setupParticleEmitters(index, item)
 		return
 	end
 
-	local assetEmitter = assetsFolder:FindFirstChild(item.Name)
-	if not assetEmitter then
-		warn("ParticleEmitter asset not found:", item.Name)
-		return
-	end
-
-	-- Clone the emitter
-	local newEmitter = assetEmitter:Clone()
-	newEmitter.Enabled = false -- Start disabled
-
 	-- Check if it should be placed in an attachment
 	if item.Attachment then
-		-- Create or find an attachment
+		-- Initialize attachment tracking map if needed
+		if not self._attachmentAssetMap then
+			self._attachmentAssetMap = {}
+		end
+
+		-- Check for stored Attachment in assets using AttachmentAsset field
+		local attachmentAssetName = item.AttachmentAsset
+		if attachmentAssetName then
+			-- Check if we already created this Attachment
+			local existingAttachment = self._attachmentAssetMap[attachmentAssetName]
+			if existingAttachment then
+				-- Attachment already exists, find the emitter inside it
+				local emitterInAttachment = existingAttachment:FindFirstChild(item.Name)
+				if emitterInAttachment then
+					emitterInAttachment.Enabled = false
+					self.particleEmitters[index] = emitterInAttachment
+					return -- Exit early, setup complete
+				end
+			end
+
+			-- Try to find the stored Attachment asset
+			local assetAttachment = assetsFolder:FindFirstChild(attachmentAssetName)
+			if assetAttachment and assetAttachment:IsA("Attachment") then
+				-- Clone stored Attachment (preserves Position, CFrame, Axis, etc.)
+				local attachmentClone = assetAttachment:Clone()
+				attachmentClone.Name = animationName .. "_" .. attachmentAssetName
+				attachmentClone.Parent = part
+
+				-- Track this Attachment
+				self._attachmentAssetMap[attachmentAssetName] = attachmentClone
+				table.insert(self.createdAssets, attachmentClone)
+
+				-- Disable all emitters inside the Attachment
+				for _, child in ipairs(attachmentClone:GetChildren()) do
+					if child:IsA("ParticleEmitter") then
+						child.Enabled = false
+					end
+				end
+
+				-- Find the specific emitter for this item
+				local emitterInAttachment = attachmentClone:FindFirstChild(item.Name)
+				if emitterInAttachment then
+					self.particleEmitters[index] = emitterInAttachment
+					return -- Exit early, setup complete
+				end
+			end
+		end
+
+		-- BACKWARD COMPATIBILITY: Fall back to old behavior
+		-- (for animations converted before this update)
+		local assetEmitter = assetsFolder:FindFirstChild(item.Name)
+		if not assetEmitter then
+			warn("ParticleEmitter asset not found:", item.Name)
+			return
+		end
+
+		local newEmitter = assetEmitter:Clone()
+		newEmitter.Enabled = false
+
 		local attachment = part:FindFirstChild(animationName .. "Attachment")
 		if not attachment then
 			attachment = Instance.new("Attachment")
@@ -336,13 +427,122 @@ function NoRigAnimationModule:_setupParticleEmitters(index, item)
 		end
 
 		newEmitter.Parent = attachment
+		table.insert(self.createdAssets, newEmitter)
+		self.particleEmitters[index] = newEmitter
 	else
-		-- Place directly in the part
+		-- Original behavior - emitter not in attachment
+		local assetEmitter = assetsFolder:FindFirstChild(item.Name)
+		if not assetEmitter then
+			warn("ParticleEmitter asset not found:", item.Name)
+			return
+		end
+
+		local newEmitter = assetEmitter:Clone()
+		newEmitter.Enabled = false
 		newEmitter.Parent = part
+
+		table.insert(self.createdAssets, newEmitter)
+		self.particleEmitters[index] = newEmitter
+	end
+end
+
+function NoRigAnimationModule:_setupBeams(index, item)
+	if not self.target or not self.target:IsA("Model") then
+		warn("Target must be a Model to setup Beams")
+		return
 	end
 
-	table.insert(self.createdAssets, newEmitter)
-	self.particleEmitters[index] = newEmitter
+	local partName = item.Place
+	local part = self:_findPartInTarget(partName)
+
+	if not part then
+		warn("Part not found for Beam placement:", partName)
+		return
+	end
+
+	-- Check if beam already exists in the part
+	local existingBeam = part:FindFirstChild(item.Name)
+	if existingBeam and existingBeam:IsA("Beam") then
+		self.originalProperties[existingBeam] = {
+			Enabled = existingBeam.Enabled,
+		}
+		self.beams[index] = existingBeam
+		return
+	end
+
+	-- Load from assets
+	local animationName = self.animationData.Name
+	local assetsFolder = ReplicatedStorage.Assets.Animations[animationName]
+
+	if not assetsFolder then
+		warn("Assets folder not found for animation:", animationName)
+		return
+	end
+
+	local assetBeam = assetsFolder:FindFirstChild(item.Name)
+	if not assetBeam or not assetBeam:IsA("Beam") then
+		warn("Beam asset not found:", item.Name)
+		return
+	end
+
+	-- Initialize attachment tracking map if needed
+	if not self._attachmentAssetMap then
+		self._attachmentAssetMap = {}
+	end
+
+	-- Clone the beam
+	local newBeam = assetBeam:Clone()
+	newBeam.Enabled = false
+	newBeam.Parent = part
+
+	-- Setup Attachment0
+	local attachment0AssetName = assetBeam:GetAttribute("Attachment0Asset")
+	local attachment0PartName = assetBeam:GetAttribute("Attachment0Part")
+	if attachment0AssetName then
+		local existingAttachment0 = self._attachmentAssetMap[attachment0AssetName]
+		if existingAttachment0 then
+			newBeam.Attachment0 = existingAttachment0
+		else
+			local assetAttachment0 = assetsFolder:FindFirstChild(attachment0AssetName)
+			if assetAttachment0 and assetAttachment0:IsA("Attachment") then
+				local targetPart0 = self:_findPartInTarget(attachment0PartName)
+				if targetPart0 then
+					local attachmentClone0 = assetAttachment0:Clone()
+					attachmentClone0.Name = animationName .. "_" .. attachment0AssetName
+					attachmentClone0.Parent = targetPart0
+					self._attachmentAssetMap[attachment0AssetName] = attachmentClone0
+					table.insert(self.createdAssets, attachmentClone0)
+					newBeam.Attachment0 = attachmentClone0
+				end
+			end
+		end
+	end
+
+	-- Setup Attachment1
+	local attachment1AssetName = assetBeam:GetAttribute("Attachment1Asset")
+	local attachment1PartName = assetBeam:GetAttribute("Attachment1Part")
+	if attachment1AssetName then
+		local existingAttachment1 = self._attachmentAssetMap[attachment1AssetName]
+		if existingAttachment1 then
+			newBeam.Attachment1 = existingAttachment1
+		else
+			local assetAttachment1 = assetsFolder:FindFirstChild(attachment1AssetName)
+			if assetAttachment1 and assetAttachment1:IsA("Attachment") then
+				local targetPart1 = self:_findPartInTarget(attachment1PartName)
+				if targetPart1 then
+					local attachmentClone1 = assetAttachment1:Clone()
+					attachmentClone1.Name = animationName .. "_" .. attachment1AssetName
+					attachmentClone1.Parent = targetPart1
+					self._attachmentAssetMap[attachment1AssetName] = attachmentClone1
+					table.insert(self.createdAssets, attachmentClone1)
+					newBeam.Attachment1 = attachmentClone1
+				end
+			end
+		end
+	end
+
+	table.insert(self.createdAssets, newBeam)
+	self.beams[index] = newBeam
 end
 
 -- UPDATED: Find parts and setup mappings - NOW LOADS ALL ASSETS INTO TARGET MODEL
@@ -354,7 +554,7 @@ function NoRigAnimationModule:_findPartsInTarget()
 	-- Store original properties before modifying anything
 	self:_storeOriginalProperties()
 
-	-- Map item names to target parts/models, loading from assets if needed
+	-- First pass: BaseParts and Models (may register emitters bundled inside them)
 	for index, item in pairs(self.animationData.Items) do
 		if item.Type == "BasePart" then
 			self:_setupBaseParts(index, item)
@@ -364,8 +564,15 @@ function NoRigAnimationModule:_findPartsInTarget()
 			self.cameraMode = item.Mode or self.cameraMode
 			self.cameraPos = index
 			self.tweenInitialFrame = item.TweenInitialFrame or false
-		elseif item.Type == "ParticleEmitter" then
+		end
+	end
+
+	-- Second pass: ParticleEmitters and Beams (emitters already inside a BasePart are skipped)
+	for index, item in pairs(self.animationData.Items) do
+		if item.Type == "ParticleEmitter" then
 			self:_setupParticleEmitters(index, item)
+		elseif item.Type == "Beam" then
+			self:_setupBeams(index, item)
 		end
 	end
 end
@@ -403,7 +610,13 @@ function NoRigAnimationModule:_setInitialCameraState()
 	self.originalCameraType = self.camera.CameraType
 	self.camera.CameraType = Enum.CameraType.Scriptable
 
-	local initialCFrame = self.behaviors[self.cameraPos].CFrame[0]
+	local cameraBehaviors = self.behaviors[self.cameraPos]
+	local cframeBehaviors = cameraBehaviors and cameraBehaviors.CFrame
+	local fovBehaviors = cameraBehaviors and cameraBehaviors.FieldOfView
+
+	local initialCFrame = cframeBehaviors and cframeBehaviors[0]
+	local initialFov = fovBehaviors and fovBehaviors[0]
+
 	if initialCFrame then
 		local cframe = initialCFrame.Values
 
@@ -413,15 +626,12 @@ function NoRigAnimationModule:_setInitialCameraState()
 
 		self.initialCameraState = {
 			CFrame = cframe,
-			FieldOfView = self.behaviors[self.cameraPos].FieldOfView
-					and self.behaviors[self.cameraPos].FieldOfView[0]
-					and self.behaviors[self.cameraPos].FieldOfView[0].Values
-				or 70,
+			FieldOfView = initialFov and initialFov.Values or self.camera.FieldOfView,
 		}
 	else
 		self.initialCameraState = {
 			CFrame = self.camera.CFrame,
-			FieldOfView = self.camera.FieldOfView,
+			FieldOfView = initialFov and initialFov.Values or self.camera.FieldOfView,
 		}
 	end
 end
@@ -476,6 +686,9 @@ function NoRigAnimationModule:_handlePartBehavior(index, behaviorType, behavior,
 		return
 	end
 
+	-- Store original properties on first modification
+	self:_storePartOriginalProperties(part)
+
 	if frame == 0 then
 		if behaviorType == "CFrame" then
 			local initialCFrame = behavior.Values
@@ -495,7 +708,6 @@ function NoRigAnimationModule:_handlePartBehavior(index, behaviorType, behavior,
 	local endFrame = nextFrame or self.totalFrames
 	local duration = (endFrame - startFrame) / self.frameRate / self.speed
 
-	local tweenInfo = TweenInfo.new(duration, behavior.Easing.Style, behavior.Easing.Direction)
 	local targetValue
 
 	if behaviorType == "CFrame" then
@@ -510,6 +722,16 @@ function NoRigAnimationModule:_handlePartBehavior(index, behaviorType, behavior,
 		targetValue = if nextBehavior then nextBehavior.Values else behavior.Values
 	end
 
+	if behavior.Easing.Style == "Constant" then
+		task.delay(duration, function()
+			if part and part.Parent then
+				part[behaviorType] = targetValue
+			end
+		end)
+		return
+	end
+
+	local tweenInfo = TweenInfo.new(duration, behavior.Easing.Style, behavior.Easing.Direction)
 	local newTween = TweenService:Create(part, tweenInfo, { [behaviorType] = targetValue })
 	newTween:Play()
 
@@ -548,6 +770,9 @@ function NoRigAnimationModule:_handleModelBehavior(index, behaviorType, behavior
         end
     end
 
+    -- Store original properties on first modification
+    self:_storeModelOriginalProperties(model)
+
     if frame == 0 then
         if behaviorType == "CFrame" then
             local initialCFrame = behavior.Values
@@ -571,8 +796,6 @@ function NoRigAnimationModule:_handleModelBehavior(index, behaviorType, behavior
     local duration = (endFrame - startFrame) / self.frameRate / self.speed
     duration = math.max(duration, 0.01)
 
-    local tweenInfo = TweenInfo.new(duration, behavior.Easing.Style, behavior.Easing.Direction, 0, false, 0)
-
     if behaviorType == "CFrame" then
         local targetValue = nextBehavior and nextBehavior.Values or behavior.Values
         if self.cameraMode == "Relative" then
@@ -580,6 +803,16 @@ function NoRigAnimationModule:_handleModelBehavior(index, behaviorType, behavior
             targetValue = referenceCFrame * targetValue
         end
 
+        if behavior.Easing.Style == "Constant" then
+            task.delay(duration, function()
+                if model and model.PrimaryPart and model.Parent then
+                    model.PrimaryPart.CFrame = targetValue
+                end
+            end)
+            return
+        end
+
+        local tweenInfo = TweenInfo.new(duration, behavior.Easing.Style, behavior.Easing.Direction, 0, false, 0)
         local newTween = TweenService:Create(model.PrimaryPart, tweenInfo, { CFrame = targetValue })
         newTween:Play()
 
@@ -600,6 +833,7 @@ function NoRigAnimationModule:_handleModelBehavior(index, behaviorType, behavior
     elseif behaviorType == "Transparency" then
         local targetValue = nextBehavior and nextBehavior.Values or behavior.Values
 
+        local tweenInfo = TweenInfo.new(duration, behavior.Easing.Style, behavior.Easing.Direction, 0, false, 0)
         for _, part in ipairs(model:GetDescendants()) do
             if part:IsA("BasePart") then
                 local newTween = TweenService:Create(part, tweenInfo, { Transparency = targetValue })
@@ -637,15 +871,26 @@ function NoRigAnimationModule:_handleParticleEmitterBehavior(index, behaviorType
 	end
 end
 
+function NoRigAnimationModule:_handleBeamBehavior(index, behaviorType, behavior)
+	local beam = self.beams[index]
+	if not beam then
+		return
+	end
+
+	if behaviorType == "Enabled" then
+		beam.Enabled = behavior.Values
+	end
+end
+
 function NoRigAnimationModule:_handleCameraBehavior(behaviorType, behavior, nextBehavior, frame, nextFrame)
 	if behaviorType == "CFrame" then
-		self:_handleCameraCFrame(nextBehavior or behavior, frame, nextFrame)
+		self:_handleCameraCFrame(nextBehavior or behavior, behavior.Easing, frame, nextFrame)
 	elseif behaviorType == "FieldOfView" then
 		self:_handleCameraFieldOfView(nextBehavior, behavior, frame, nextFrame)
 	end
 end
 
-function NoRigAnimationModule:_handleCameraCFrame(behavior, frame, nextFrame)
+function NoRigAnimationModule:_handleCameraCFrame(behavior, easing, frame, nextFrame)
 	local targetCFrame = behavior.Values
 	if self.cameraMode == "Relative" then
 		targetCFrame = self:_getTargetCFrame() * targetCFrame
@@ -654,7 +899,17 @@ function NoRigAnimationModule:_handleCameraCFrame(behavior, frame, nextFrame)
 	local startFrame = frame
 	local endFrame = nextFrame or self.totalFrames
 	local duration = (endFrame - startFrame) / self.frameRate / self.speed
-	local tweenInfo = TweenInfo.new(duration, behavior.Easing.Style, behavior.Easing.Direction)
+
+	if easing.Style == "Constant" then
+		task.delay(duration, function()
+			if self.camera then
+				self.camera.CFrame = targetCFrame
+			end
+		end)
+		return
+	end
+
+	local tweenInfo = TweenInfo.new(duration, easing.Style, easing.Direction)
 	local newTween = TweenService:Create(self.camera, tweenInfo, { CFrame = targetCFrame })
 	newTween:Play()
 
@@ -769,6 +1024,8 @@ function NoRigAnimationModule:_handleBehaviors(frame)
 						self:_handleModelBehavior(index, behaviorType, behavior, nextBehavior, frame, nextFrame)
 					elseif self.particleEmitters[index] then
 						self:_handleParticleEmitterBehavior(index, behaviorType, behavior)
+					elseif self.beams[index] then
+						self:_handleBeamBehavior(index, behaviorType, behavior)
 					end
 				end
 			end
@@ -815,6 +1072,9 @@ function NoRigAnimationModule:stop()
 	end
 	self.activeTweens = {}
 
+	-- Restore original properties first, then override VFX back to disabled
+	self:_restoreOriginalProperties()
+
 	-- Disable any particle emitters
 	for _, emitter in pairs(self.particleEmitters) do
 		if emitter and emitter:IsA("ParticleEmitter") then
@@ -822,8 +1082,12 @@ function NoRigAnimationModule:stop()
 		end
 	end
 
-	-- Restore original properties
-	self:_restoreOriginalProperties()
+	-- Disable any beams
+	for _, beam in pairs(self.beams) do
+		if beam and beam:IsA("Beam") then
+			beam.Enabled = false
+		end
+	end
 
 	self.lastProcessedFrame = -1
 	self.elapsedTime = 0
@@ -842,9 +1106,11 @@ function NoRigAnimationModule:destroy()
 	self.partMappings = {}
 	self.modelMappings = {}
 	self.particleEmitters = {}
+	self.beams = {}
 	self.createdAssets = {}
 	self.behaviors = {}
 	self.originalProperties = {}
+	self._attachmentAssetMap = {}
 
 	self.finished:Destroy()
 end
