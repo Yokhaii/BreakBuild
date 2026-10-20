@@ -18,6 +18,7 @@ local StudBackground = require(Components.Global.StudBackground)
 local HotbarSlot = require(script.Parent.HotbarSlot)
 local HammerSlot = require(script.Parent.HammerSlot)
 local InventoryButton = require(script.Parent.InventoryButton)
+local TextNotification = require(script.Parent.TextNotification)
 
 local Config = require(script.Config)
 
@@ -71,6 +72,8 @@ local function Hotbar(props, hooks)
 		}),
 
 		InventoryButton = Roact.createElement(InventoryButton),
+
+		TextNotification = Roact.createElement(TextNotification),
 
 		HammerSlot = hammerAvailable and Roact.createElement(HammerSlot, {
 			isEquipped = equippedSlot == 0,

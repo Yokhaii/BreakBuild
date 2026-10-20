@@ -11,6 +11,7 @@ local BlueprintReducer = require(Reducers.BlueprintReducer)
 local CraftingReducer = require(Reducers.CraftingReducer)
 local ChestReducer = require(Reducers.ChestReducer)
 local NotificationReducer = require(Reducers.NotificationReducer)
+local TextNotificationReducer = require(Reducers.TextNotificationReducer)
 
 -- Modules
 local Rodux = require(ReplicatedStorage.Packages.Rodux)
@@ -24,6 +25,7 @@ local StoreReducer = Rodux.combineReducers({
 	CraftingReducer = CraftingReducer,
 	ChestReducer = ChestReducer,
 	NotificationReducer = NotificationReducer,
+	TextNotificationReducer = TextNotificationReducer,
 })
 
 local Store = Rodux.Store.new(StoreReducer, nil, {

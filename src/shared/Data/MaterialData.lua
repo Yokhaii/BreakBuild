@@ -4,6 +4,8 @@
     Including spawn weights, properties, and other material-specific data
 ]]
 
+local BreakingConfig = require(script.Parent.Parent.Config.BreakingConfig)
+
 local MaterialData = {}
 
 -- Player configuration for holding materials
@@ -34,6 +36,8 @@ MaterialData.SpawnWeights = {
     - breakTime: number - base time in seconds to break this material
     - requiredTier: string - minimum tool tier required to break
       Tiers: "Wood" < "Stone" < "Iron" < "Gold" < "Diamond"
+    - requiredToolCategory: string? - tool category required ("Pickaxe", "Axe", "Shovel", "Hammer")
+      If nil, any tool (or bare hands) can break it
     - dropMultiplier: number - how many items drop (default 1)
 ]]
 
@@ -54,73 +58,73 @@ MaterialData.Properties = {
         displayName = "Dirt",
         rarity = "Common",
         color = Color3.fromRGB(139, 90, 43),
-        -- Breaking properties
         breakTime = 1.0,
-        requiredTier = "Hand", -- Can be broken by bare hands
+        requiredTier = "Hand",
+        preferredToolCategory = "Shovel",
     },
     Grass = {
         displayName = "Grass",
         rarity = "Common",
         color = Color3.fromRGB(139, 90, 43),
-        -- Breaking properties
         breakTime = 1.0,
-        requiredTier = "Hand", -- Can be broken by bare hands
+        requiredTier = "Hand",
+        preferredToolCategory = "Shovel",
     },
     Stone = {
         displayName = "Stone",
         rarity = "Common",
         color = Color3.fromRGB(128, 128, 128),
-        -- Breaking properties
         breakTime = 2.0,
-        requiredTier = "Hand", -- Can be broken by bare hands
+        requiredTier = "Hand",
+        requiredToolCategory = "Pickaxe",
     },
     Sand = {
         displayName = "Sand",
         rarity = "Common",
         color = Color3.fromRGB(238, 214, 175),
-        -- Breaking properties
         breakTime = 0.8,
-        requiredTier = "Hand", -- Can be broken by bare hands
+        requiredTier = "Hand",
+        preferredToolCategory = "Shovel",
     },
     Log = {
         displayName = "Log",
         rarity = "Common",
         color = Color3.fromRGB(101, 67, 33),
-        -- Breaking properties
         breakTime = 1.5,
         requiredTier = "Hand",
+        preferredToolCategory = "Axe",
     },
     RawIron = {
         displayName = "Raw Iron",
         rarity = "Uncommon",
         color = Color3.fromRGB(192, 192, 192),
-        -- Breaking properties
         breakTime = 3.0,
         requiredTier = "Stone",
+        requiredToolCategory = "Pickaxe",
     },
     RawGold = {
         displayName = "Raw Gold",
         rarity = "Rare",
         color = Color3.fromRGB(255, 215, 0),
-        -- Breaking properties
         breakTime = 2.5,
         requiredTier = "Iron",
+        requiredToolCategory = "Pickaxe",
     },
     RawDiamond = {
         displayName = "Raw Diamond",
         rarity = "Very Rare",
         color = Color3.fromRGB(0, 191, 255),
-        -- Breaking properties
         breakTime = 4.0,
         requiredTier = "Iron",
+        requiredToolCategory = "Pickaxe",
     },
     Structure = {
         displayName = "Structure",
         rarity = "Crafted",
         color = Color3.fromRGB(139, 90, 43),
-        -- Breaking properties - requires hammer (Wood tier)
         breakTime = 2.0,
         requiredTier = "Wood",
+        requiredToolCategory = "Hammer",
     },
     Bedrock = {
         displayName = "Bedrock",
@@ -136,6 +140,7 @@ MaterialData.Properties = {
         color = Color3.fromRGB(180, 150, 120),
         breakTime = 3.0,
         requiredTier = "Stone",
+        requiredToolCategory = "Pickaxe",
     },
     CoalOreBlock = {
         displayName = "Coal Ore",
@@ -143,6 +148,7 @@ MaterialData.Properties = {
         color = Color3.fromRGB(50, 50, 50),
         breakTime = 2.0,
         requiredTier = "Wood",
+        requiredToolCategory = "Pickaxe",
     },
 }
 
@@ -209,8 +215,9 @@ function MaterialData.GetProperties(materialName: string)
     return MaterialData.Properties[materialName]
 end
 
--- Check if a tool tier can break a material
-function MaterialData.CanToolBreak(toolTier: string, materialName: string): boolean
+-- Check if a tool tier and category can break a material
+-- toolCategory is optional; bare hands pass nil and bypass category checks
+function MaterialData.CanToolBreak(toolTier: string, materialName: string, toolCategory: string?): boolean
     local props = MaterialData.Properties[materialName]
     if not props then return false end
 
@@ -219,15 +226,28 @@ function MaterialData.CanToolBreak(toolTier: string, materialName: string): bool
     local toolLevel = MaterialData.ToolTierOrder[toolTier] or 0
     local requiredLevel = MaterialData.ToolTierOrder[props.requiredTier] or 0
 
-    return toolLevel >= requiredLevel
+    if toolLevel < requiredLevel then return false end
+
+    if props.requiredToolCategory then
+        if not toolCategory then return false end
+        return toolCategory == props.requiredToolCategory
+    end
+
+    return true
 end
 
 -- Get the break time for a material with tool speed applied
-function MaterialData.GetBreakTime(materialName: string, toolBreakSpeed: number): number
+-- toolCategory is optional; only matching categories get the speed bonus
+function MaterialData.GetBreakTime(materialName: string, toolBreakSpeed: number, toolCategory: string?): number
     local props = MaterialData.Properties[materialName]
-    if not props then return 2.0 end -- Default fallback
+    if not props then return 2.0 end
 
     local baseTime = props.breakTime or 2.0
+
+    if props.preferredToolCategory and toolCategory ~= props.preferredToolCategory then
+        return baseTime / BreakingConfig.BareHandBreakSpeed
+    end
+
     return baseTime / (toolBreakSpeed or 1.0)
 end
 

@@ -8,6 +8,8 @@
 	- toolTier: string - determines which materials this tool can break
 	  Tiers: "Wood" < "Stone" < "Iron" < "Steel" < "Gold" < "Diamond"
 	  A tool can break materials of its tier or lower
+	- toolCategory: string - determines which type of materials this tool can break
+	  Categories: "Pickaxe" (stone/ore), "Axe" (logs), "Shovel" (dirt/sand), "Hammer" (structures)
 ]]
 
 local Tools = {
@@ -25,6 +27,7 @@ local Tools = {
 		isBreakingTool = true,
 		breakSpeed = 1.0,
 		toolTier = "Wood",
+		toolCategory = "Hammer",
 	},
 	DevPickaxe = {
 		name = "DevPickaxe",
@@ -39,7 +42,8 @@ local Tools = {
 		isBreakingTool = true,
 		breakSpeed = 50,
 		toolTier = "Wood",
-		-- For testing: bypass tier check and break anything
+		toolCategory = "Pickaxe",
+		-- For testing: bypass tier and category checks
 		canBreakAll = true,
 	},
 
@@ -56,8 +60,7 @@ local Tools = {
 		isBreakingTool = true,
 		breakSpeed = 1,
 		toolTier = "Wood",
-		-- For testing: bypass tier check and break anything
-		canBreakAll = true,
+		toolCategory = "Pickaxe",
 	},
 
 	StonePickaxe = {
@@ -73,6 +76,7 @@ local Tools = {
 		isBreakingTool = true,
 		breakSpeed = 1.5,
 		toolTier = "Stone",
+		toolCategory = "Pickaxe",
 	},
 
 	IronPickaxe = {
@@ -87,6 +91,7 @@ local Tools = {
 		isBreakingTool = true,
 		breakSpeed = 2.0,
 		toolTier = "Iron",
+		toolCategory = "Pickaxe",
 	},
 
 	SteelPickaxe = {
@@ -101,6 +106,7 @@ local Tools = {
 		isBreakingTool = true,
 		breakSpeed = 2.5,
 		toolTier = "Steel",
+		toolCategory = "Pickaxe",
 	},
 
 	-- Axes
@@ -116,6 +122,7 @@ local Tools = {
 		isBreakingTool = true,
 		breakSpeed = 1.0,
 		toolTier = "Wood",
+		toolCategory = "Axe",
 	},
 
 	StoneAxe = {
@@ -130,6 +137,7 @@ local Tools = {
 		isBreakingTool = true,
 		breakSpeed = 1.5,
 		toolTier = "Stone",
+		toolCategory = "Axe",
 	},
 
 	IronAxe = {
@@ -144,6 +152,7 @@ local Tools = {
 		isBreakingTool = true,
 		breakSpeed = 2.0,
 		toolTier = "Iron",
+		toolCategory = "Axe",
 	},
 
 	SteelAxe = {
@@ -158,6 +167,7 @@ local Tools = {
 		isBreakingTool = true,
 		breakSpeed = 2.5,
 		toolTier = "Steel",
+		toolCategory = "Axe",
 	},
 
 	-- Shovels
@@ -173,6 +183,7 @@ local Tools = {
 		isBreakingTool = true,
 		breakSpeed = 1.0,
 		toolTier = "Wood",
+		toolCategory = "Shovel",
 	},
 
 	StoneShovel = {
@@ -187,6 +198,7 @@ local Tools = {
 		isBreakingTool = true,
 		breakSpeed = 1.5,
 		toolTier = "Stone",
+		toolCategory = "Shovel",
 	},
 
 	IronShovel = {
@@ -201,6 +213,7 @@ local Tools = {
 		isBreakingTool = true,
 		breakSpeed = 2.0,
 		toolTier = "Iron",
+		toolCategory = "Shovel",
 	},
 
 	SteelShovel = {
@@ -215,6 +228,7 @@ local Tools = {
 		isBreakingTool = true,
 		breakSpeed = 2.5,
 		toolTier = "Steel",
+		toolCategory = "Shovel",
 	},
 
 	-- Swords (combat tools)

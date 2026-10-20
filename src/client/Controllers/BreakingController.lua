@@ -34,8 +34,12 @@ local BreakingController = Knit.CreateController({
 	Name = "BreakingController",
 })
 
+local TextNotificationController
+
 -- Constants
 local HIGHLIGHT_PREVIEW_COLOR = Color3.fromRGB(255, 255, 255)
+local HIGHLIGHT_CANT_BREAK_COLOR = Color3.fromRGB(255, 0, 0)
+local CANT_BREAK_FEEDBACK_DELAY = 1.0
 
 -- Types
 type BreakableData = {
@@ -56,6 +60,18 @@ local currentBreakingProgress: number = 0
 
 -- Client-side humanoid animation state
 local isPlayingMiningAnimation = false
+
+-- "Can't break" feedback state
+local cantBreakStartTime: number? = nil
+local highlightTurnedRed = false
+local cantBreakNotifId: string? = nil
+
+local function releaseCantBreakNotif()
+	if cantBreakNotifId and TextNotificationController then
+		TextNotificationController:Release(cantBreakNotifId)
+		cantBreakNotifId = nil
+	end
+end
 
 -- Preview state
 local hoveredBreakableId: string? = nil
@@ -291,11 +307,11 @@ local function canBreakHoveredObject(): boolean
 		return true
 	end
 
-	return MaterialData.CanToolBreak(toolConfig.toolTier, breakable.materialType)
+	return MaterialData.CanToolBreak(toolConfig.toolTier, breakable.materialType, toolConfig.toolCategory)
 end
 
 local function updateMiningAnimation()
-	local shouldPlay = isMouseDown and canBreakHoveredObject()
+	local shouldPlay = isMouseDown and hoveredBreakableId ~= nil
 
 	if shouldPlay and not isPlayingMiningAnimation then
 		startMiningAnimation()
@@ -398,6 +414,9 @@ local function clearPreviewHighlight()
 		previewBillboard = nil
 	end
 	hoveredBreakableId = nil
+	cantBreakStartTime = nil
+	highlightTurnedRed = false
+	releaseCantBreakNotif()
 end
 
 local function updatePreviewHighlight(breakableId: string?, model: Instance?)
@@ -486,6 +505,15 @@ local function stopBreaking()
 	stopShakeAnimation()
 	stopBreakingVFX()
 
+	-- Reset red highlight back to default
+	if highlightTurnedRed and previewHighlight then
+		previewHighlight.OutlineColor = Color3.new(0, 0, 0)
+		previewHighlight.OutlineTransparency = 0.7
+	end
+	cantBreakStartTime = nil
+	highlightTurnedRed = false
+	releaseCantBreakNotif()
+
 	BreakingService:StopBreaking()
 end
 
@@ -514,20 +542,56 @@ local function updateBreaking()
 		if currentBreakingId then
 			stopBreaking()
 		end
+		cantBreakStartTime = nil
+		highlightTurnedRed = false
+		releaseCantBreakNotif()
 		return
 	end
 
 	local targetId = hoveredBreakableId
 
-	if not targetId or not canBreakHoveredObject() then
+	if not targetId then
 		if currentBreakingId then
 			stopBreaking()
 		end
+		cantBreakStartTime = nil
+		highlightTurnedRed = false
+		releaseCantBreakNotif()
 		return
 	end
 
 	if currentBreakingId ~= targetId then
 		startBreaking(targetId)
+		cantBreakStartTime = nil
+		highlightTurnedRed = false
+		releaseCantBreakNotif()
+	end
+
+	-- Handle "can't break" red highlight feedback
+	if currentBreakingId and not canBreakHoveredObject() then
+		if not cantBreakStartTime then
+			cantBreakStartTime = tick()
+		end
+		if not highlightTurnedRed and (tick() - cantBreakStartTime) >= CANT_BREAK_FEEDBACK_DELAY then
+			highlightTurnedRed = true
+			if previewHighlight then
+				previewHighlight.OutlineColor = HIGHLIGHT_CANT_BREAK_COLOR
+				previewHighlight.OutlineTransparency = 0.3
+			end
+			if TextNotificationController and not cantBreakNotifId then
+				cantBreakNotifId = TextNotificationController:ShowPersistent("You can't mine this block", Color3.fromRGB(255, 80, 80))
+			end
+		end
+	else
+		if highlightTurnedRed then
+			highlightTurnedRed = false
+			if previewHighlight then
+				previewHighlight.OutlineColor = Color3.new(0, 0, 0)
+				previewHighlight.OutlineTransparency = 0.7
+			end
+			releaseCantBreakNotif()
+		end
+		cantBreakStartTime = nil
 	end
 end
 
@@ -705,6 +769,7 @@ function BreakingController:KnitStart()
 	GlobalBreakingAreaService = Knit.GetService("GlobalBreakingAreaService")
 	InventoryController = Knit.GetController("InventoryController")
 	DistanceFadeController = Knit.GetController("DistanceFadeController")
+	TextNotificationController = Knit.GetController("TextNotificationController")
 
 	--startGlobalBreakingAreaFade()
 

@@ -8,8 +8,8 @@ local NotificationItem = require(script.NotificationItem)
 
 local Config = require(script.Config)
 
-local ITEM_HEIGHT = Config.NotificationHeight.Offset
-local ITEM_PADDING = Config.Padding.Offset
+local ITEM_HEIGHT = Config.NotificationHeight.Scale
+local ITEM_PADDING = Config.Padding.Scale
 local ROW_STEP = ITEM_HEIGHT + ITEM_PADDING
 
 local function Notifications(_, hooks)
@@ -35,10 +35,11 @@ local function Notifications(_, hooks)
 	return Roact.createElement("Frame", {
 		Name = "Notifications",
 		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -10, 0.4, 0),
-		Size = UDim2.new(0, 180, 1, 0),
+		Position = UDim2.fromScale(0.99, 0.4),
+		Size = UDim2.fromScale(0.15, 1),
 		BackgroundTransparency = 1,
 		ClipsDescendants = false,
+		ZIndex = 100,
 	}, children)
 end
 

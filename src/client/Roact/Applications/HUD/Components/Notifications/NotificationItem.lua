@@ -17,7 +17,28 @@ local function NotificationItem(props, hooks)
 	local yPosition = props.yPosition
 
 	local alpha, setAlpha = hooks.useState(0)
-	local phase, setPhase = hooks.useState("visible")
+	local slideIn, setSlideIn = hooks.useState(1)
+
+	hooks.useEffect(function()
+		local startTime = tick()
+		local connection
+
+		connection = RunService.RenderStepped:Connect(function()
+			local progress = math.min((tick() - startTime) / Config.SlideInDuration, 1)
+			local eased = 1 - (1 - progress) * (1 - progress)
+			setSlideIn(1 - eased)
+
+			if progress >= 1 then
+				connection:Disconnect()
+			end
+		end)
+
+		return function()
+			if connection then
+				connection:Disconnect()
+			end
+		end
+	end, { notification.id })
 
 	hooks.useEffect(function()
 		local startTime = tick()
@@ -30,10 +51,10 @@ local function NotificationItem(props, hooks)
 			if currentPhase == "visible" then
 				if elapsed >= Config.DisplayDuration then
 					currentPhase = "fading"
-					setPhase("fading")
 					Store:dispatch(NotificationActions.startFading(notification.id))
 					startTime = tick()
 				end
+
 			elseif currentPhase == "fading" then
 				local fadeProgress = math.min(elapsed / Config.FadeOutDuration, 1)
 				setAlpha(fadeProgress)
@@ -52,6 +73,7 @@ local function NotificationItem(props, hooks)
 		end
 	end, { notification.id, notification.quantity })
 
+	local slideInOffset = slideIn * Config.SlideInDistance
 	local slideOffset = alpha * -Config.SlideUpDistance
 	local transparency = alpha
 
@@ -61,7 +83,7 @@ local function NotificationItem(props, hooks)
 		Name = "Notification_" .. notification.id,
 		Size = UDim2.new(Config.NotificationWidth, Config.NotificationHeight),
 		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, 0, 0.5, yPosition + slideOffset),
+		Position = UDim2.new(1, slideInOffset, 0.5 + yPosition, slideOffset),
 		BackgroundTransparency = 1,
 		ClipsDescendants = false,
 	}, {
@@ -85,12 +107,12 @@ local function NotificationItem(props, hooks)
 		Amount = Roact.createElement("TextLabel", {
 			Name = "Amount",
 			AutomaticSize = Enum.AutomaticSize.X,
-			Size = UDim2.fromOffset(0, 18),
+			Size = UDim2.fromScale(0, 1),
 			BackgroundTransparency = 1,
 			FontFace = Config.FontFace,
 			Text = "x" .. tostring(notification.quantity),
 			TextColor3 = Config.TextColor,
-			TextSize = 16,
+			TextScaled = true,
 			TextTransparency = transparency,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			LayoutOrder = 2,

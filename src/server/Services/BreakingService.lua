@@ -114,12 +114,12 @@ local function getEquippedToolConfig(player: Player): any
 	return itemConfig
 end
 
--- Check if tool can break material
+-- Check if tool can break material (tier + category)
 local function canToolBreakMaterial(toolConfig: any, materialType: string): boolean
 	if toolConfig.canBreakAll then
 		return true
 	end
-	return MaterialData.CanToolBreak(toolConfig.toolTier, materialType)
+	return MaterialData.CanToolBreak(toolConfig.toolTier, materialType, toolConfig.toolCategory)
 end
 
 -- Give item to player inventory
@@ -215,17 +215,15 @@ function BreakingService:StartBreaking(player: Player, breakableId: string): boo
 	-- Get tool config (returns bare hand config if no tool equipped)
 	local toolConfig = getEquippedToolConfig(player)
 
-	-- Check if tool can break this material
-	if not canToolBreakMaterial(toolConfig, breakable.materialType) then
-		return false
-	end
-
-	-- Calculate break time
+	-- Calculate break time (infinite if tool can't break this material)
+	local canBreak = canToolBreakMaterial(toolConfig, breakable.materialType)
 	local breakTime
-	if breakable.customBreakTime then
+	if not canBreak then
+		breakTime = math.huge
+	elseif breakable.customBreakTime then
 		breakTime = breakable.customBreakTime / toolConfig.breakSpeed
 	else
-		breakTime = MaterialData.GetBreakTime(breakable.materialType, toolConfig.breakSpeed)
+		breakTime = MaterialData.GetBreakTime(breakable.materialType, toolConfig.breakSpeed, toolConfig.toolCategory)
 	end
 
 	local state = {
@@ -360,12 +358,11 @@ local function updateBreakingProgress()
 			continue
 		end
 
-		-- Check if tool is still equipped and valid
+		-- Recalculate break time if tool changed
 		local toolConfig = getEquippedToolConfig(player)
-		if not canToolBreakMaterial(toolConfig, breakable.materialType) then
-			playerBreaking[player] = nil
-			BreakingService.Client.BreakingStopped:Fire(player, state.breakableId)
-			continue
+		local canBreak = canToolBreakMaterial(toolConfig, breakable.materialType)
+		if not canBreak then
+			state.totalBreakTime = math.huge
 		end
 
 		-- Calculate progress
@@ -430,10 +427,9 @@ local function updateBreakingProgress()
 		end
 
 		local toolConfig = getEquippedToolConfig(player)
-		if not canToolBreakMaterial(toolConfig, breakable.materialType) then
-			globalBreaking[player] = nil
-			BreakingService.Client.BreakingStopped:Fire(player, state.breakableId)
-			continue
+		local canBreakGlobal = canToolBreakMaterial(toolConfig, breakable.materialType)
+		if not canBreakGlobal then
+			state.totalBreakTime = math.huge
 		end
 
 		local elapsed = currentTime - state.startTime
