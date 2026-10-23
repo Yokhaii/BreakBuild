@@ -41,11 +41,11 @@ end
 function DayNightService:KnitStart()
 	local cycleTime = 0
 
-	RunService.Heartbeat:Connect(function(delta)
+	--[[RunService.Heartbeat:Connect(function(delta)
 		cycleTime = (cycleTime + delta) % CYCLE_DURATION
 
 		Lighting.ClockTime = cycleTimeToClockTime(cycleTime)
-	end)
+	end)]]
 end
 
 return DayNightService

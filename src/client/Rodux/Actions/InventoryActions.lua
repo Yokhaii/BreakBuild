@@ -58,4 +58,11 @@ InventoryActions.removeGridSlot = Rodux.makeActionCreator("removeGridSlot", func
 	}
 end)
 
+InventoryActions.restoreGridSlot = Rodux.makeActionCreator("restoreGridSlot", function(gridIndex, item)
+	return {
+		gridIndex = gridIndex,
+		item = item,
+	}
+end)
+
 return InventoryActions

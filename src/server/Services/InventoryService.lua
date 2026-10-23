@@ -929,7 +929,7 @@ function InventoryService.Client:DevRemoveItem(player: Player, itemId: string)
 end
 
 function InventoryService:IsDevPlayer(player: Player): boolean
-	return  true --RunService:IsStudio() or DEV_USER_IDS[player.UserId] == true
+	return DEV_USER_IDS[player.UserId] == true
 end
 
 function InventoryService.Client:IsDevPlayer(player: Player): boolean

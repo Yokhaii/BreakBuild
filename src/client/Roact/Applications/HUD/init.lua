@@ -13,6 +13,7 @@ local RoduxHooks = require(ReplicatedStorage.Packages.Roduxhooks)
 -- Components
 local Hotbar = require(script.Components.Hotbar)
 local CycleTimer = require(script.Components.CycleTimer)
+local BalanceDisplay = require(script.Components.BalanceDisplay)
 
 -- Component
 local function HUD(_, hooks)
@@ -34,6 +35,7 @@ local function HUD(_, hooks)
 	}, {
 		Hotbar = Roact.createElement(Hotbar),
 		CycleTimer = Roact.createElement(CycleTimer),
+		BalanceDisplay = Roact.createElement(BalanceDisplay),
 	})
 end
 

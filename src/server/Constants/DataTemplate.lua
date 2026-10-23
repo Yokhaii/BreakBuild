@@ -1,6 +1,8 @@
 return {
 	TemplateData = 1,
 
+	Dollars = 0,
+
 	-- Inventory System (Unified Hotbar)
 	Inventory = {
 		-- Hotbar: 7 slots for any non-Ore item (tools, blocks, blueprints, structures)

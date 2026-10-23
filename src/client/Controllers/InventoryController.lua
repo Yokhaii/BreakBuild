@@ -191,7 +191,7 @@ local function toggleBackpack()
 		local uiState = Store:getState().UIReducer
 		if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "StoneCutter"
 			or uiState.CurrentFrame == "Furnace" or uiState.CurrentFrame == "LogCutter"
-			or uiState.CurrentFrame == "Chest" then
+			or uiState.CurrentFrame == "Chest" or uiState.CurrentFrame == "Shop" then
 			Store:dispatch(UIActions.setCurrentFrame("HUD"))
 		end
 
@@ -203,6 +203,11 @@ local function toggleBackpack()
 		local ChestController = Knit.GetController("ChestController")
 		if ChestController and ChestController:GetCurrentChestId() then
 			ChestController:CloseChest()
+		end
+
+		local ShopController = Knit.GetController("ShopController")
+		if ShopController and ShopController:IsShopOpen() then
+			ShopController:CloseShop()
 		end
 	end
 end
@@ -370,7 +375,7 @@ function InventoryController:CloseBackpack()
 	local uiState = Store:getState().UIReducer
 	if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "StoneCutter"
 		or uiState.CurrentFrame == "Furnace" or uiState.CurrentFrame == "LogCutter"
-		or uiState.CurrentFrame == "Chest" then
+		or uiState.CurrentFrame == "Chest" or uiState.CurrentFrame == "Shop" then
 		Store:dispatch(UIActions.setCurrentFrame("HUD"))
 	end
 
@@ -382,6 +387,11 @@ function InventoryController:CloseBackpack()
 	local ChestController = Knit.GetController("ChestController")
 	if ChestController and ChestController:GetCurrentChestId() then
 		ChestController:CloseChest()
+	end
+
+	local ShopController = Knit.GetController("ShopController")
+	if ShopController and ShopController:IsShopOpen() then
+		ShopController:CloseShop()
 	end
 end
 
