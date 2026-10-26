@@ -6,6 +6,7 @@ local ZoneService = Knit.CreateService({
 	Name = "ZoneService",
 	Client = {
 		ZoneAssigned = Knit.CreateSignal(),
+		PlayerTeleported = Knit.CreateSignal(),
 	},
 })
 
@@ -101,13 +102,20 @@ function ZoneService:TeleportToZone(player)
 
 	local grass = zoneData.grass
 	local spawnPosition = grass.Position + Vector3.new(0, grass.Size.Y / 2 + 3, 0)
-	humanoidRootPart.CFrame = CFrame.new(spawnPosition)
+	humanoidRootPart.CFrame = CFrame.new(spawnPosition) * CFrame.Angles(0, math.rad(180), 0)
+
+	-- Fire signal to client to adjust camera
+	self.Client.PlayerTeleported:Fire(player)
 end
 
 function ZoneService.Client:GetAssignedZone(player)
 	local zoneData = zoneAssignments[player]
 	if not zoneData then return nil end
 	return zoneData.zoneName
+end
+
+function ZoneService.Client:TeleportToZone(player)
+	return self.Server:TeleportToZone(player)
 end
 
 function ZoneService:KnitStart()

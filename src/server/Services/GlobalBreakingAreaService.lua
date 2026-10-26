@@ -506,9 +506,13 @@ local function startCycleTimer()
 			end
 
 			if remaining <= 0 then
+				-- Fire transition signal 0.5 seconds before reset
 				for _, p in ipairs(Players:GetPlayers()) do
 					GlobalBreakingAreaService.Client.CycleReset:Fire(p)
 				end
+
+				-- Wait for transition screen to appear
+				task.wait(0.5)
 
 				destroyAllBlocks()
 				generateAndPlace()

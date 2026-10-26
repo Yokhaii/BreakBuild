@@ -14,6 +14,7 @@ local ChestReducer = require(Reducers.ChestReducer)
 local ShopReducer = require(Reducers.ShopReducer)
 local NotificationReducer = require(Reducers.NotificationReducer)
 local TextNotificationReducer = require(Reducers.TextNotificationReducer)
+local BiomeTransitionReducer = require(Reducers.BiomeTransitionReducer)
 
 -- Modules
 local Rodux = require(ReplicatedStorage.Packages.Rodux)
@@ -30,6 +31,7 @@ local StoreReducer = Rodux.combineReducers({
 	ShopReducer = ShopReducer,
 	NotificationReducer = NotificationReducer,
 	TextNotificationReducer = TextNotificationReducer,
+	BiomeTransitionReducer = BiomeTransitionReducer,
 })
 
 local Store = Rodux.Store.new(StoreReducer, nil, {
