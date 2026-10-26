@@ -29,19 +29,6 @@ local Blueprints = {
 		blueprintType = "Furnace",
 	},
 
-	StoneCutterBlueprint = {
-		name = "StoneCutterBlueprint",
-		displayName = "Stone Cutter Blueprint",
-		type = "Blueprint",
-		stackable = false,
-		maxStack = 1,
-		dropable = true,
-		description = "A blueprint for building a Stone Cutter",
-		modelPath = "Assets.Items.Blueprint",
-		isBlueprintTool = true,
-		blueprintType = "StoneCutter",
-	},
-
 	ChestBlueprint = {
 		name = "ChestBlueprint",
 		displayName = "Chest Blueprint",

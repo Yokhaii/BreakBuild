@@ -148,6 +148,26 @@ local function endDrag()
 		local item = dragState.item
 		local fromIdx = dragState.sourceGridIndex
 		targetZone.onDrop(item, fromIdx)
+	elseif targetGridIndex == "craft_pool" then
+		-- Crafting pool: add item to pool and clear inventory slot
+		local item = dragState.item
+		local fromIdx = dragState.sourceGridIndex
+		if item and fromIdx then
+			local CraftingPoolActions = require(StarterPlayer.StarterPlayerScripts.Client.Rodux.Actions.CraftingPoolActions)
+
+			-- Check if this is inventory crafting (single slot only)
+			if targetZone.id == "inventory_craft_pool" then
+				local poolState = Store:getState().CraftingPoolReducer
+				if poolState and poolState.Pool and #poolState.Pool > 0 then
+					-- Pool already has items, reject the drop
+					cancelDrag()
+					return
+				end
+			end
+
+			Store:dispatch(CraftingPoolActions.addToCraftingPool(item.itemName, item.quantity, item.id, fromIdx))
+			Store:dispatch(InventoryActions.removeGridSlot(fromIdx))
+		end
 	elseif targetGridIndex == -1 then
 		-- Trash zone: remove the item
 		local item = dragState.item
@@ -189,8 +209,7 @@ local function toggleBackpack()
 
 	if not newState then
 		local uiState = Store:getState().UIReducer
-		if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "StoneCutter"
-			or uiState.CurrentFrame == "Furnace" or uiState.CurrentFrame == "LogCutter"
+		if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "Furnace"
 			or uiState.CurrentFrame == "Chest" or uiState.CurrentFrame == "Shop" then
 			Store:dispatch(UIActions.setCurrentFrame("HUD"))
 		end
@@ -208,6 +227,58 @@ local function toggleBackpack()
 		local ShopController = Knit.GetController("ShopController")
 		if ShopController and ShopController:IsShopOpen() then
 			ShopController:CloseShop()
+		end
+
+		-- ALWAYS restore crafting pool items to inventory when backpack closes
+		local CraftingPoolActions = require(StarterPlayer.StarterPlayerScripts.Client.Rodux.Actions.CraftingPoolActions)
+		local poolState = Store:getState().CraftingPoolReducer
+		if poolState and poolState.Pool and #poolState.Pool > 0 then
+			-- Save pool snapshot before clearing (prevent race conditions)
+			local poolSnapshot = {}
+			for _, entry in ipairs(poolState.Pool) do
+				table.insert(poolSnapshot, entry)
+			end
+
+			-- Clear pool FIRST to prevent double-restoration
+			Store:dispatch(CraftingPoolActions.clearCraftingPool())
+
+			-- Get fresh inventory state after pool clear
+			local inventoryState = Store:getState().InventoryReducer
+
+			-- Aggregate pool items by gridIndex (same slot may have multiple entries)
+			local slotTotals = {}
+			for _, entry in ipairs(poolSnapshot) do
+				if entry.gridIndex and entry.itemId then
+					if not slotTotals[entry.gridIndex] then
+						slotTotals[entry.gridIndex] = { itemId = entry.itemId, itemName = entry.itemName, totalQuantity = 0 }
+					end
+					slotTotals[entry.gridIndex].totalQuantity = slotTotals[entry.gridIndex].totalQuantity + entry.quantity
+				end
+			end
+
+			-- Restore aggregated amounts to each slot
+			for gridIndex, data in pairs(slotTotals) do
+				local currentSlot = nil
+				if gridIndex <= 21 then
+					currentSlot = inventoryState.Backpack[gridIndex]
+				else
+					currentSlot = inventoryState.Hotbar[gridIndex - 21]
+				end
+
+				if currentSlot and currentSlot.itemName == data.itemName then
+					Store:dispatch(InventoryActions.restoreGridSlot(gridIndex, {
+						id = currentSlot.id,
+						itemName = data.itemName,
+						quantity = currentSlot.quantity + data.totalQuantity,
+					}))
+				else
+					Store:dispatch(InventoryActions.restoreGridSlot(gridIndex, {
+						id = data.itemId,
+						itemName = data.itemName,
+						quantity = data.totalQuantity,
+					}))
+				end
+			end
 		end
 	end
 end
@@ -319,6 +390,7 @@ end
 -- onDrop: optional function(item, fromGridIndex) called instead of the default swap/trash logic.
 function InventoryController:RegisterDropZone(id: string, gridIndex: number, guiObject: GuiObject, onDrop)
 	dropZones[id] = {
+		id = id,
 		gridIndex = gridIndex,
 		object = guiObject,
 		onDrop = onDrop,
@@ -373,8 +445,7 @@ function InventoryController:CloseBackpack()
 	Store:dispatch(InventoryActions.setDevPickerOpen(false))
 
 	local uiState = Store:getState().UIReducer
-	if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "StoneCutter"
-		or uiState.CurrentFrame == "Furnace" or uiState.CurrentFrame == "LogCutter"
+	if uiState.CurrentFrame == "Workbench" or uiState.CurrentFrame == "Furnace"
 		or uiState.CurrentFrame == "Chest" or uiState.CurrentFrame == "Shop" then
 		Store:dispatch(UIActions.setCurrentFrame("HUD"))
 	end

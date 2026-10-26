@@ -13,7 +13,7 @@ local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
 local Knit = require(ReplicatedStorage.Packages.Knit)
 
 local Components = StarterPlayer.StarterPlayerScripts.Client.Roact.Components
-local PanelFrame = require(Components.Frames.PanelFrame)
+local RightPanel = require(Components.Frames.RightPanel)
 local ItemSlot = require(Components.Global.ItemSlot)
 
 local DEFAULT_ITEM_ICON = "rbxassetid://95016840981722"
@@ -98,7 +98,7 @@ local function DevItemPicker(props, hooks)
 		})
 	end
 
-	return Roact.createElement(PanelFrame, {
+	return Roact.createElement(RightPanel, {
 		Name = "DevItemPicker",
 		AnchorPoint = Config.FrameAnchorPoint,
 		Position = Config.FramePosition,
@@ -114,6 +114,7 @@ local function DevItemPicker(props, hooks)
 			Size = UDim2.fromScale(0.95, 0.97),
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
+			Active = true,
 			ScrollBarThickness = 4,
 			ScrollBarImageColor3 = Color3.fromRGB(200, 200, 200),
 			ScrollBarImageTransparency = 0.3,

@@ -1,8 +1,20 @@
 return {
+	SprucePlank = {
+		id = "SprucePlank",
+		displayName = "Spruce Plank",
+		stationType = "Inventory",
+		craftTime = 2,
+		inputs = {
+			{ itemName = "Log", quantity = 1 },
+		},
+		outputs = {
+			{ itemName = "SprucePlank", quantity = 4 },
+		},
+	},
 	HalfStone = {
 		id = "HalfStone",
 		displayName = "Half Stone",
-		stationType = "StoneCutter",
+		stationType = "Inventory",
 		craftTime = 3,
 		inputs = {
 			{ itemName = "Stone", quantity = 1 },
@@ -14,11 +26,10 @@ return {
 	StoneShard = {
 		id = "StoneShard",
 		displayName = "Stone Shard",
-		stationType = "StoneCutter",
+		stationType = "Inventory",
 		craftTime = 3,
 		inputs = {
 			{ itemName = "HalfStone", quantity = 4 },
-			{ itemName = "Stone", quantity = 1 },
 		},
 		outputs = {
 			{ itemName = "StoneShard", quantity = 1 },

@@ -19,10 +19,10 @@ local ItemTooltip = require(Components.Global.ItemTooltip)
 
 local BackpackSlot = require(script.Components.BackpackSlot)
 local DevItemPicker = require(Components.Global.DevItemPicker)
+local LeftPanel = require(Components.Inventory.LeftPanel)
+local TopPanel = require(Components.Inventory.TopPanel)
 local WorkbenchApplication = require(Client.Roact.Applications.Workbench)
-local StoneCutterApplication = require(Client.Roact.Applications.StoneCutter)
 local FurnaceApplication = require(Client.Roact.Applications.Furnace)
-local LogCutterApplication = require(Client.Roact.Applications.LogCutter)
 local ChestApplication = require(Client.Roact.Applications.Chest)
 local ShopApplication = require(Client.Roact.Applications.Shop)
 
@@ -43,13 +43,189 @@ local function Backpack(props, hooks)
 		return state.UIReducer.CurrentFrame
 	end)
 	local isWorkbenchOpen = currentFrame == "Workbench"
-	local isStoneCutterOpen = currentFrame == "StoneCutter"
 	local isFurnaceOpen = currentFrame == "Furnace"
-	local isLogCutterOpen = currentFrame == "LogCutter"
 	local isChestOpen = currentFrame == "Chest"
 	local isShopOpen = currentFrame == "Shop"
 
 	local hoveredItemName, setHoveredItemName = hooks.useState(nil)
+	local selectedInventoryRecipe, setSelectedInventoryRecipe = hooks.useState(nil)
+	local inventoryCraftCount, setInventoryCraftCount = hooks.useState(1)
+	local inventoryCraftProgress, setInventoryCraftProgress = hooks.useState(0)
+	local isInventoryCrafting, setIsInventoryCrafting = hooks.useState(false)
+
+	-- Clear pool when inventory closes/opens
+	hooks.useEffect(function()
+		if not isOpen then
+			-- Inventory just closed, pool cleanup already handled in InventoryController
+			return
+		end
+	end, { isOpen })
+
+	local function countItem(itemName)
+		local total = 0
+		for _, item in pairs(backpackItems) do
+			if item and item.itemName == itemName then
+				total = total + (item.quantity or 1)
+			end
+		end
+		for _, item in pairs(hotbar) do
+			if item and item.itemName == itemName then
+				total = total + (item.quantity or 1)
+			end
+		end
+		return total
+	end
+
+	local function handleInventoryRecipeSelect(recipeId)
+		local Recipes = require(ReplicatedStorage.Shared.Data.Recipes)
+		local recipe = Recipes.GetRecipe(recipeId)
+		if not recipe then return end
+
+		local Store = require(Client.Rodux.Store)
+		local CraftingPoolActions = require(Client.Rodux.Actions.CraftingPoolActions)
+		local InventoryActions = require(Client.Rodux.Actions.InventoryActions)
+
+		-- ALWAYS clear the pool first before adding new recipe items
+		local poolState = Store:getState().CraftingPoolReducer
+		if poolState and poolState.Pool and #poolState.Pool > 0 then
+			-- Restore all pool items back to inventory first
+			local poolSnapshot = {}
+			for _, entry in ipairs(poolState.Pool) do
+				table.insert(poolSnapshot, entry)
+			end
+
+			Store:dispatch(CraftingPoolActions.clearCraftingPool())
+
+			local inventoryState = Store:getState().InventoryReducer
+			local slotTotals = {}
+			for _, entry in ipairs(poolSnapshot) do
+				if entry.gridIndex and entry.itemId then
+					if not slotTotals[entry.gridIndex] then
+						slotTotals[entry.gridIndex] = { itemId = entry.itemId, itemName = entry.itemName, totalQuantity = 0 }
+					end
+					slotTotals[entry.gridIndex].totalQuantity = slotTotals[entry.gridIndex].totalQuantity + entry.quantity
+				end
+			end
+
+			for gridIndex, data in pairs(slotTotals) do
+				local currentSlot = nil
+				if gridIndex <= 21 then
+					currentSlot = inventoryState.Backpack[gridIndex]
+				else
+					currentSlot = inventoryState.Hotbar[gridIndex - 21]
+				end
+
+				if currentSlot and currentSlot.itemName == data.itemName then
+					Store:dispatch(InventoryActions.restoreGridSlot(gridIndex, {
+						id = currentSlot.id,
+						itemName = data.itemName,
+						quantity = currentSlot.quantity + data.totalQuantity,
+					}))
+				else
+					Store:dispatch(InventoryActions.restoreGridSlot(gridIndex, {
+						id = data.itemId,
+						itemName = data.itemName,
+						quantity = data.totalQuantity,
+					}))
+				end
+			end
+		end
+
+		-- Now add new recipe items to pool
+		-- Re-read fresh inventory state after pool restoration
+		local freshInventoryState = Store:getState().InventoryReducer
+		local freshBackpack = freshInventoryState.Backpack or {}
+		local freshHotbar = freshInventoryState.Hotbar or {}
+
+		-- Check if player has the required items
+		for _, input in ipairs(recipe.inputs) do
+			local foundQuantity = 0
+			local foundItems = {}
+
+			-- Search inventory for items (using fresh state)
+			for slot = 1, 21 do
+				local item = freshBackpack[slot]
+				if item and item.itemName == input.itemName then
+					table.insert(foundItems, { gridIndex = slot, item = item })
+					foundQuantity = foundQuantity + item.quantity
+				end
+			end
+			for slot = 1, 7 do
+				local item = freshHotbar[slot]
+				if item and item.itemName == input.itemName then
+					table.insert(foundItems, { gridIndex = 21 + slot, item = item })
+					foundQuantity = foundQuantity + item.quantity
+				end
+			end
+
+			-- If we have enough, add to pool and remove from inventory
+			if foundQuantity >= input.quantity then
+				local remaining = input.quantity
+				for _, found in ipairs(foundItems) do
+					if remaining <= 0 then break end
+					local takeAmount = math.min(remaining, found.item.quantity)
+
+					-- Add to crafting pool
+					Store:dispatch(CraftingPoolActions.addToCraftingPool(
+						found.item.itemName,
+						takeAmount,
+						found.item.id,
+						found.gridIndex
+					))
+
+					-- Only remove from inventory if we're taking the entire stack
+					if takeAmount >= found.item.quantity then
+						Store:dispatch(InventoryActions.removeGridSlot(found.gridIndex))
+					else
+						-- Keep the remainder in inventory (update quantity)
+						local remainingItem = {
+							id = found.item.id,
+							itemName = found.item.itemName,
+							quantity = found.item.quantity - takeAmount,
+						}
+						Store:dispatch(InventoryActions.restoreGridSlot(found.gridIndex, remainingItem))
+					end
+
+					remaining = remaining - takeAmount
+				end
+			end
+		end
+
+		if selectedInventoryRecipe and selectedInventoryRecipe.id == recipeId then
+			setInventoryCraftCount(math.min(inventoryCraftCount + 1, 99))
+		else
+			setSelectedInventoryRecipe(recipe)
+			setInventoryCraftCount(1)
+		end
+	end
+
+	local function handleInventoryRecipeRemove()
+		if not selectedInventoryRecipe then return end
+		if inventoryCraftCount <= 1 then
+			setSelectedInventoryRecipe(nil)
+			setInventoryCraftCount(1)
+		else
+			setInventoryCraftCount(inventoryCraftCount - 1)
+		end
+	end
+
+	local function handleInventoryCraft(recipe, craftCount)
+		-- NEW: Craft from pool (recipe auto-matched from pool contents)
+		local CraftingController = Knit.GetController("CraftingController")
+		local Store = require(Client.Rodux.Store)
+		local CraftingPoolActions = require(Client.Rodux.Actions.CraftingPoolActions)
+
+		if CraftingController then
+			-- Inventory crafting is instant (no timer needed)
+			-- Recipe is passed from TopPanel (auto-matched)
+			CraftingController:CraftInventoryItem(recipe.id, craftCount)
+			-- Clear crafting pool after successful craft
+			Store:dispatch(CraftingPoolActions.clearCraftingPool())
+			-- Clear selected recipe and reset count
+			setSelectedInventoryRecipe(nil)
+			setInventoryCraftCount(1)
+		end
+	end
 
 	if not isOpen then
 		return Roact.createElement("Frame", { Visible = false })
@@ -145,6 +321,7 @@ local function Backpack(props, hooks)
 			BorderSizePixel = 0,
 			Image = "",
 			AutoButtonColor = false,
+			Active = true,
 			ZIndex = 11,
 			ClipsDescendants = false,
 			[Roact.Event.MouseButton1Click] = function() end,
@@ -207,22 +384,28 @@ local function Backpack(props, hooks)
 
 			DevItemPicker = isDevPickerOpen and Roact.createElement(DevItemPicker) or nil,
 
+			LeftPanel = (not isWorkbenchOpen and not isFurnaceOpen and not isChestOpen and not isShopOpen) and Roact.createElement(LeftPanel, {
+				SelectedRecipeId = nil, -- Don't show selected state (pool shows what's selected)
+				OnRecipeSelect = handleInventoryRecipeSelect,
+				OnRemove = handleInventoryRecipeRemove,
+				CountItem = countItem,
+				ZIndex = 11,
+			}) or nil,
+
+			TopPanel = (not isWorkbenchOpen and not isFurnaceOpen and not isChestOpen and not isShopOpen) and Roact.createElement(TopPanel, {
+				CraftCount = inventoryCraftCount,
+				OnCraft = handleInventoryCraft,
+				OnHoverStart = handleHoverStart,
+				OnHoverEnd = handleHoverEnd,
+				ZIndex = 11,
+			}) or nil,
+
 			Workbench = isWorkbenchOpen and Roact.createElement(WorkbenchApplication, {
 				OnHoverStart = handleHoverStart,
 				OnHoverEnd = handleHoverEnd,
 			}) or nil,
 
-			StoneCutter = isStoneCutterOpen and Roact.createElement(StoneCutterApplication, {
-				OnHoverStart = handleHoverStart,
-				OnHoverEnd = handleHoverEnd,
-			}) or nil,
-
 			Furnace = isFurnaceOpen and Roact.createElement(FurnaceApplication, {
-				OnHoverStart = handleHoverStart,
-				OnHoverEnd = handleHoverEnd,
-			}) or nil,
-
-			LogCutter = isLogCutterOpen and Roact.createElement(LogCutterApplication, {
 				OnHoverStart = handleHoverStart,
 				OnHoverEnd = handleHoverEnd,
 			}) or nil,

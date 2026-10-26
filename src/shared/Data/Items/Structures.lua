@@ -31,34 +31,6 @@ local Structures = {
 		placementModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.Furnace",
 	},
 
-	CompletedStoneCutter = {
-		name = "CompletedStoneCutter",
-		displayName = "Stone Cutter",
-		type = "Structure",
-		stackable = false,
-		maxStack = 1,
-		dropable = true,
-		description = "A completed stone cutter. Place it to cut stone.",
-		modelPath = "Assets.Items.CompletedStoneCutter",
-		isStructure = true,
-		blueprintType = "StoneCutter",
-		placementModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.StoneCutter",
-	},
-
-	CompletedLogCutter = {
-		name = "CompletedLogCutter",
-		displayName = "Log Cutter",
-		type = "Structure",
-		stackable = false,
-		maxStack = 1,
-		dropable = true,
-		description = "A log cutter. Place it to cut logs into planks.",
-		modelPath = "Assets.Items.CompletedLogCutter",
-		isStructure = true,
-		blueprintType = "LogCutter",
-		placementModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.LogCutter",
-	},
-
 	CompletedChest = {
 		name = "CompletedChest",
 		displayName = "Chest",

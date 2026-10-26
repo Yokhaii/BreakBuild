@@ -1,8 +1,8 @@
 return {
-	-- Frame sizing & position (to the left of the parent panel)
+	-- Frame sizing & position (to the right of the parent panel)
 	FrameSize = UDim2.fromScale(0.6, 1.6),
-	FramePosition = UDim2.fromScale(-0.03, 1),
-	FrameAnchorPoint = Vector2.new(1, 1),
+	FramePosition = UDim2.fromScale(1.03, 1),
+	FrameAnchorPoint = Vector2.new(0, 1),
 	AspectRatio = 0.65,
 
 	-- Grid layout

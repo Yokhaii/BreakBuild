@@ -10,7 +10,7 @@ return {
 	CardStrokeTransparency = 0.87,
 
 	-- Selected state
-	SelectedStrokeColor = Color3.fromRGB(160, 100, 40),
+	SelectedStrokeColor = Color3.fromRGB(80, 200, 80),
 	SelectedStrokeTransparency = 0,
 
 	-- Content padding

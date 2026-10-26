@@ -436,6 +436,47 @@ function CraftingService:GetSession(player: Player)
 	return sessions[player]
 end
 
+function CraftingService:CraftInventoryItem(player: Player, recipeId: string, quantity: number?)
+	local qty = quantity or 1
+	qty = math.clamp(qty, 1, 99)
+
+	local recipe = Recipes.GetRecipe(recipeId)
+	if not recipe then
+		return { success = false, reason = "Recipe not found" }
+	end
+
+	if recipe.stationType ~= "Inventory" then
+		return { success = false, reason = "Not an inventory recipe" }
+	end
+
+	-- Cooldown check
+	local now = os.clock()
+	if lastCraftTime[player] and (now - lastCraftTime[player]) < CRAFT_COOLDOWN then
+		return { success = false, reason = "Crafting too fast" }
+	end
+	lastCraftTime[player] = now
+
+	-- Check inputs
+	local hasInputs, reason = hasRequiredInputs(player, recipe, qty)
+	if not hasInputs then
+		return { success = false, reason = reason }
+	end
+
+	-- Inventory crafting is always instant (no station required)
+	local removed = removeInputs(player, recipe, qty)
+	if not removed then
+		return { success = false, reason = "Failed to consume inputs" }
+	end
+
+	local added = addOutputs(player, recipe, qty)
+	if not added then
+		-- Failed to add outputs, should refund inputs but for now just fail
+		return { success = false, reason = "Inventory full" }
+	end
+
+	return { success = true }
+end
+
 --|| Client Methods ||--
 
 function CraftingService.Client:StartSession(player: Player, blueprintId: string)
@@ -448,6 +489,10 @@ end
 
 function CraftingService.Client:CraftItem(player: Player, recipeId: string, quantity: number?)
 	return self.Server:CraftItem(player, recipeId, quantity)
+end
+
+function CraftingService.Client:CraftInventoryItem(player: Player, recipeId: string, quantity: number?)
+	return self.Server:CraftInventoryItem(player, recipeId, quantity)
 end
 
 --|| Lifecycle ||--

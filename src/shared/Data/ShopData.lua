@@ -43,14 +43,11 @@ ShopData.Prices = {
 	-- Blueprints
 	WorkbenchBlueprint = { buyPrice = 200 },
 	FurnaceBlueprint = { buyPrice = 400 },
-	StoneCutterBlueprint = { buyPrice = 300 },
 	ChestBlueprint = { buyPrice = 240 },
 
 	-- Structures
 	CompletedWorkbench = { buyPrice = 1000 },
 	CompletedFurnace = { buyPrice = 1600 },
-	CompletedStoneCutter = { buyPrice = 1200 },
-	CompletedLogCutter = { buyPrice = 800 },
 	CompletedChest = { buyPrice = 1000 },
 }
 

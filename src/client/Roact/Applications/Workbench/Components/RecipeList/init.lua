@@ -52,6 +52,7 @@ local function RecipeList(props, hooks)
 		Position = props.Position or UDim2.fromScale(0, 0),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
+		Active = true,
 		ScrollBarThickness = Config.ScrollBarThickness,
 		ScrollBarImageColor3 = Config.ScrollBarColor,
 		CanvasSize = UDim2.fromScale(0, 0),

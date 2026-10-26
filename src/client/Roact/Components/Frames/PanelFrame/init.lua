@@ -25,6 +25,7 @@ local function PanelFrame(props, hooks)
 		Position = props.Position or UDim2.fromScale(0.5, 0.5),
 		Size = props.Size or UDim2.fromScale(0.3, 0.5),
 		BackgroundTransparency = 1,
+		Active = true,
 		ZIndex = zIndex,
 		ClipsDescendants = true,
 		[Roact.Ref] = props[Roact.Ref],
@@ -41,6 +42,16 @@ local function PanelFrame(props, hooks)
 			Color = props.StrokeColor or Config.StrokeColor,
 			Thickness = props.StrokeThickness or Config.StrokeThickness,
 			Transparency = props.StrokeTransparency or Config.StrokeTransparency,
+		}),
+
+		-- Input blocker - invisible ImageButton at lowest ZIndex to block clicks to DarkOverlay
+		InputBlocker = Roact.createElement("ImageButton", {
+			Name = "InputBlocker",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Image = "",
+			AutoButtonColor = false,
+			ZIndex = zIndex - 1,
 		}),
 
 		Title = props.Title and Roact.createElement(FancyText, {
@@ -69,6 +80,7 @@ local function PanelFrame(props, hooks)
 			Position = props.ContentPosition or Config.ContentPosition,
 			Size = props.ContentSize or Config.ContentSize,
 			BackgroundTransparency = 1,
+			Active = true,
 			ZIndex = zIndex + 1,
 			ClipsDescendants = true,
 		}, {

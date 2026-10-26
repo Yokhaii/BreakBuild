@@ -33,6 +33,7 @@ local function BaseFrame(props, hooks)
 		BackgroundColor3 = props.BackgroundColor3 or Config.BackgroundColor,
 		BackgroundTransparency = props.BackgroundTransparency or Config.BackgroundTransparency,
 		BorderSizePixel = 0,
+		Active = true,
 		ZIndex = props.ZIndex or 5,
 		Visible = props.Visible,
 		ClipsDescendants = true,
@@ -47,6 +48,16 @@ local function BaseFrame(props, hooks)
 			Color = props.StrokeColor or Config.StrokeColor,
 			Thickness = props.StrokeThickness or Config.StrokeThickness,
 			Transparency = 0,
+		}),
+
+		-- Input blocker - invisible ImageButton at lowest ZIndex to block clicks to DarkOverlay
+		InputBlocker = Roact.createElement("ImageButton", {
+			Name = "InputBlocker",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Image = "",
+			AutoButtonColor = false,
+			ZIndex = (props.ZIndex or 5) - 1,
 		}),
 
 		-- Aspect ratio (optional)
@@ -122,6 +133,7 @@ local function BaseFrame(props, hooks)
 			Position = props.ContentPosition or UDim2.fromScale(0.5, 0.98),
 			Size = props.ContentSize or Config.ContentSize,
 			BackgroundTransparency = 1,
+			Active = true,
 			ZIndex = (props.ZIndex or 5) + 1,
 			ClipsDescendants = true,
 		}, {
