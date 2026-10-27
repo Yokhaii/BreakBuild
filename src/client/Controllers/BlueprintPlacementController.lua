@@ -64,6 +64,14 @@ local buildingArea = nil
 -- Active blueprints on client
 local activeBlueprints = {} -- { [blueprintId]: ClientBaseBlueprint }
 
+-- Mobile state
+local isMobile = false
+local mobilePreviewActive = false
+local isDragging = false
+local touchStartedOnPreview = false
+local touchStartPosition = nil
+local MOBILE_TAP_THRESHOLD = 10
+
 --|| Private Functions ||--
 
 -- Get building zone references (populated from ZoneService assignment)
@@ -289,81 +297,49 @@ local function createGlassHighlight(model)
 	return glassCopy, highlight
 end
 
--- Update preview position
-local function updatePreview()
-	if not placementMode or not previewModel or not currentBlueprintType or not currentDefinition then
-		return
-	end
+-- Hide mobile preview and reset state
+local function hideMobilePreview()
+	mobilePreviewActive = false
+	isDragging = false
+	touchStartedOnPreview = false
+	touchStartPosition = nil
+	if previewModel then previewModel.Parent = nil end
+	if previewGlassModel then previewGlassModel.Parent = nil end
+end
 
-	-- Check if player is inside the BuildingArea
+-- Compute blueprint position from screen coordinates (shared by desktop and mobile)
+local function computeBlueprintPosition(screenX: number, screenY: number): (Vector3?, boolean)
 	local _, area = getBuildingZone()
-	if not area then
-		if previewModel.Parent then
-			previewModel.Parent = nil
-		end
-		if previewGlassModel and previewGlassModel.Parent then
-			previewGlassModel.Parent = nil
-		end
-		return
-	end
+	if not area then return nil, false end
 
 	local character = player.Character
-	if not character or not character.PrimaryPart then
-		if previewModel.Parent then
-			previewModel.Parent = nil
-		end
-		if previewGlassModel and previewGlassModel.Parent then
-			previewGlassModel.Parent = nil
-		end
-		return
-	end
+	if not character or not character.PrimaryPart then return nil, false end
 
-	-- Raycast from mouse
 	local camera = Workspace.CurrentCamera
-	local mouseRay = camera:ScreenPointToRay(mouse.X, mouse.Y)
-	local rayOrigin = mouseRay.Origin
-	local rayDirection = mouseRay.Direction * 1000
+	local ray = camera:ScreenPointToRay(screenX, screenY)
+	local rayOrigin = ray.Origin
+	local rayDirection = ray.Direction * 1000
 
-	-- Create raycast params (same as BuildingController)
 	local raycastParams = RaycastParams.new()
 	raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
 
-	-- Build filter list
 	local filterList = {player.Character, previewModel}
 	if previewGlassModel then
 		table.insert(filterList, previewGlassModel)
 	end
 	raycastParams.FilterDescendantsInstances = filterList
 
-	-- Perform raycast
 	local raycastResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+	if not raycastResult then return nil, false end
 
-	if not raycastResult then
-		if previewModel.Parent then
-			previewModel.Parent = nil
-		end
-		if previewGlassModel and previewGlassModel.Parent then
-			previewGlassModel.Parent = nil
-		end
-		return
-	end
-
-	-- Get hit position and normal (same as BuildingController)
 	local hitPosition = raycastResult.Position
 	local hitNormal = raycastResult.Normal
 
-	-- Get building area info
 	local areaOrigin = getBuildingAreaOrigin()
-	local areaPosition = area.Position
 
-	-- Calculate target position on surface (same as regular block placement)
-	-- Add half the anchor block size in the direction of the normal
 	local targetPosition = hitPosition + (hitNormal * (anchorBlockSize.Y / 2))
-
-	-- Snap to grid based on anchor block size (same as BuildingController)
 	local snappedPosition = snapToGridForBlockSize(targetPosition, anchorBlockSize)
 
-	-- Clamp to building area bounds (same as BuildingController)
 	local relativePos = snappedPosition - areaOrigin
 	local halfBlockSize = anchorBlockSize / 2
 	local clampedRelativeX = math.clamp(relativePos.X, -32 + halfBlockSize.X, 32 - halfBlockSize.X)
@@ -375,38 +351,88 @@ local function updatePreview()
 	)
 	clampedPosition = snapToGridForBlockSize(clampedPosition, anchorBlockSize)
 
-	-- Check if ALL blocks in the blueprint are within bounds
-	isValidPlacement = areAllBlocksWithinBounds(clampedPosition, currentDefinition, areaOrigin)
+	local isValid = areAllBlocksWithinBounds(clampedPosition, currentDefinition, areaOrigin)
+	return clampedPosition, isValid
+end
 
-	-- Store the anchor position (this is what we send to the server)
-	currentPosition = clampedPosition
+-- Apply computed position to preview models and highlight
+local function applyBlueprintPreviewPosition(position: Vector3, isValid: boolean)
+	currentPosition = position
+	isValidPlacement = isValid
 
-	-- Update preview position using PrimaryPart as anchor
 	if previewModel.PrimaryPart then
-		previewModel:SetPrimaryPartCFrame(CFrame.new(clampedPosition))
+		previewModel:SetPrimaryPartCFrame(CFrame.new(position))
 	end
 
-	-- Update glass copy position
 	if previewGlassModel then
 		if previewGlassModel:IsA("Model") and previewGlassModel.PrimaryPart then
-			previewGlassModel:SetPrimaryPartCFrame(CFrame.new(clampedPosition))
+			previewGlassModel:SetPrimaryPartCFrame(CFrame.new(position))
 		end
 	end
 
-	-- Update highlight color on glass copy
 	if previewHighlight then
-		local targetColor = isValidPlacement and HIGHLIGHT_VALID_COLOR or HIGHLIGHT_INVALID_COLOR
+		local targetColor = isValid and HIGHLIGHT_VALID_COLOR or HIGHLIGHT_INVALID_COLOR
 		previewHighlight.OutlineColor = targetColor
 		previewHighlight.FillColor = targetColor
 	end
 
-	-- Make sure preview and glass copy are visible
 	if not previewModel.Parent then
 		previewModel.Parent = Workspace
 	end
 	if previewGlassModel and not previewGlassModel.Parent then
 		previewGlassModel.Parent = Workspace
 	end
+end
+
+-- Check if a screen tap hits the preview model (for mobile placement confirmation)
+local function isTapOnPreview(screenX: number, screenY: number): boolean
+	if not previewModel or not previewModel.Parent then return false end
+
+	local camera = Workspace.CurrentCamera
+	local ray = camera:ScreenPointToRay(screenX, screenY)
+
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+	local filterList = {player.Character}
+	if previewGlassModel then
+		table.insert(filterList, previewGlassModel)
+	end
+	raycastParams.FilterDescendantsInstances = filterList
+
+	local result = Workspace:Raycast(ray.Origin, ray.Direction * 1000, raycastParams)
+	if not result then return false end
+
+	return result.Instance == previewModel or result.Instance:IsDescendantOf(previewModel)
+end
+
+-- Update preview position (desktop only — mobile uses touch events)
+local function updatePreview()
+	if not placementMode or not previewModel or not currentBlueprintType or not currentDefinition then
+		return
+	end
+
+	local _, area = getBuildingZone()
+	if not area then
+		if previewModel.Parent then previewModel.Parent = nil end
+		if previewGlassModel and previewGlassModel.Parent then previewGlassModel.Parent = nil end
+		return
+	end
+
+	local character = player.Character
+	if not character or not character.PrimaryPart then
+		if previewModel.Parent then previewModel.Parent = nil end
+		if previewGlassModel and previewGlassModel.Parent then previewGlassModel.Parent = nil end
+		return
+	end
+
+	local position, isValid = computeBlueprintPosition(mouse.X, mouse.Y)
+	if not position then
+		if previewModel.Parent then previewModel.Parent = nil end
+		if previewGlassModel and previewGlassModel.Parent then previewGlassModel.Parent = nil end
+		return
+	end
+
+	applyBlueprintPreviewPosition(position, isValid)
 end
 
 -- Get anchor block size from definition (first block or block at offset 0,0,0)
@@ -491,6 +517,10 @@ local function stopPlacementMode()
 	anchorBlockSize = DEFAULT_BLOCK_SIZE
 	isStructurePlacement = false
 	currentStructureItemName = nil
+	mobilePreviewActive = false
+	isDragging = false
+	touchStartedOnPreview = false
+	touchStartPosition = nil
 
 	-- Destroy preview
 	if previewModel then
@@ -621,11 +651,65 @@ end
 local function onInputBegan(input, gameProcessed)
 	if gameProcessed then return end
 
-	-- Left click to place blueprint
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+	if input.UserInputType == Enum.UserInputType.Touch and isMobile then
+		if not placementMode or not previewModel then return end
+
+		local screenX = input.Position.X
+		local screenY = input.Position.Y
+
+		-- Check if tapping on preview — start drag, place on release if no movement
+		if mobilePreviewActive and isTapOnPreview(screenX, screenY) then
+			touchStartedOnPreview = true
+			touchStartPosition = Vector2.new(screenX, screenY)
+			isDragging = true
+			return
+		end
+
+		-- Position or reposition preview
+		touchStartedOnPreview = false
+		local position, isValid = computeBlueprintPosition(screenX, screenY)
+		if position then
+			applyBlueprintPreviewPosition(position, isValid)
+			mobilePreviewActive = true
+			isDragging = true
+		end
+
+	elseif input.UserInputType == Enum.UserInputType.MouseButton1 and not isMobile then
 		if placementMode then
 			onMouseClick()
 		end
+	end
+end
+
+-- Handle input changed (mobile drag)
+local function onInputChanged(input, gameProcessed)
+	if not isMobile then return end
+	if input.UserInputType == Enum.UserInputType.Touch and isDragging and placementMode and previewModel then
+		local screenX = input.Position.X
+		local screenY = input.Position.Y
+		local position, isValid = computeBlueprintPosition(screenX, screenY)
+		if position then
+			applyBlueprintPreviewPosition(position, isValid)
+		end
+	end
+end
+
+-- Handle input ended (mobile: place on release if tapped preview without dragging)
+local function onInputEnded(input, gameProcessed)
+	if not isMobile then return end
+	if input.UserInputType == Enum.UserInputType.Touch then
+		if touchStartedOnPreview and placementMode and mobilePreviewActive then
+			local screenX = input.Position.X
+			local screenY = input.Position.Y
+			local moved = touchStartPosition and (Vector2.new(screenX, screenY) - touchStartPosition).Magnitude or 0
+			if moved < MOBILE_TAP_THRESHOLD and isValidPlacement then
+				onMouseClick()
+				hideMobilePreview()
+			end
+		end
+		isDragging = false
+		touchStartedOnPreview = false
+		touchStartPosition = nil
 	end
 end
 
@@ -839,18 +923,20 @@ function BlueprintPlacementController:KnitStart()
 	BlueprintService.BlueprintCompleted:Connect(onBlueprintCompleted)
 	BlueprintService.StructurePlaced:Connect(onBlueprintPlaced) -- Structure uses same handler
 
-	-- Update preview every frame
+	-- Platform detection
+	isMobile = UserInputService.TouchEnabled
+
+	-- Update preview every frame (desktop only)
 	RunService.RenderStepped:Connect(function()
-		if placementMode then
+		if placementMode and not isMobile then
 			updatePreview()
 		end
 	end)
 
 	-- Handle input
 	UserInputService.InputBegan:Connect(onInputBegan)
-
-	-- Note: Blueprints are loaded via BlueprintPlaced signal from server's LoadPlayerBlueprints
-	-- No need to manually fetch them here
+	UserInputService.InputChanged:Connect(onInputChanged)
+	UserInputService.InputEnded:Connect(onInputEnded)
 
 	print("[BlueprintPlacementController] Initialized")
 end

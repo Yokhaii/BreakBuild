@@ -90,6 +90,11 @@ local breakingVFXParticles: {ParticleEmitter} = {}
 local breakingVFXScalable: {ParticleEmitter} = {} -- Square_50, Square_200 that scale with progress
 local breakingVFXBaseRates: {[ParticleEmitter]: number} = {} -- Store base rates
 local breakingColor: Color3? = nil
+
+-- Mobile breaking state
+local isMobile = false
+local isTouchBreaking = false
+
 local VFX_FOLDER_PATH = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("VFX"):WaitForChild("Breaking"):WaitForChild("4x4")
 
 -- References
@@ -311,7 +316,12 @@ local function canBreakHoveredObject(): boolean
 end
 
 local function updateMiningAnimation()
-	local shouldPlay = isMouseDown and hoveredBreakableId ~= nil
+	local shouldPlay
+	if isTouchBreaking then
+		shouldPlay = currentBreakingId ~= nil
+	else
+		shouldPlay = isMouseDown and hoveredBreakableId ~= nil
+	end
 
 	if shouldPlay and not isPlayingMiningAnimation then
 		startMiningAnimation()
@@ -323,9 +333,9 @@ end
 --|| Detection Functions ||--
 
 -- Detect any breakable under cursor via raycast
-local function detectBreakableUnderCursor(): (string?, Instance?)
+local function detectBreakableUnderCursor(screenX: number?, screenY: number?): (string?, Instance?)
 	local camera = Workspace.CurrentCamera
-	local mouseRay = camera:ScreenPointToRay(mouse.X, mouse.Y)
+	local mouseRay = camera:ScreenPointToRay(screenX or mouse.X, screenY or mouse.Y)
 	local rayOrigin = mouseRay.Origin
 	local rayDirection = mouseRay.Direction * 1000
 
@@ -494,13 +504,29 @@ local function updatePreview()
 	updatePreviewHighlight(breakableId, model)
 end
 
+local function isInBreakingRange(breakableId: string): boolean
+	local breakable = breakableData[breakableId]
+	if not breakable then return false end
+
+	local character = player.Character
+	if not character then return false end
+
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then return false end
+
+	return (breakable.position - humanoidRootPart.Position).Magnitude <= BreakingConfig.BreakRange
+end
+
 --|| Breaking Functions ||--
 
 local function stopBreaking()
 	if not currentBreakingId then return end
 
+	local wasTouchBreaking = isTouchBreaking
+
 	currentBreakingId = nil
 	currentBreakingProgress = 0
+	isTouchBreaking = false
 
 	stopShakeAnimation()
 	stopBreakingVFX()
@@ -514,10 +540,14 @@ local function stopBreaking()
 	highlightTurnedRed = false
 	releaseCantBreakNotif()
 
+	if wasTouchBreaking then
+		clearPreviewHighlight()
+	end
+
 	BreakingService:StopBreaking()
 end
 
-local function startBreaking(breakableId: string)
+local function startBreaking(breakableId: string, breakModel: Instance?)
 	if currentBreakingId == breakableId then return end
 
 	if currentBreakingId then
@@ -527,8 +557,13 @@ local function startBreaking(breakableId: string)
 	currentBreakingId = breakableId
 	currentBreakingProgress = 0
 
-	-- Find model for VFX
-	local _, model = detectBreakableUnderCursor()
+	-- Use provided model or detect from cursor
+	local model = breakModel
+	if not model then
+		local _, detected = detectBreakableUnderCursor()
+		model = detected
+	end
+
 	if model then
 		startShakeAnimation(model)
 		startBreakingVFX(model)
@@ -537,37 +572,7 @@ local function startBreaking(breakableId: string)
 	BreakingService:StartBreaking(breakableId)
 end
 
-local function updateBreaking()
-	if not isMouseDown then
-		if currentBreakingId then
-			stopBreaking()
-		end
-		cantBreakStartTime = nil
-		highlightTurnedRed = false
-		releaseCantBreakNotif()
-		return
-	end
-
-	local targetId = hoveredBreakableId
-
-	if not targetId then
-		if currentBreakingId then
-			stopBreaking()
-		end
-		cantBreakStartTime = nil
-		highlightTurnedRed = false
-		releaseCantBreakNotif()
-		return
-	end
-
-	if currentBreakingId ~= targetId then
-		startBreaking(targetId)
-		cantBreakStartTime = nil
-		highlightTurnedRed = false
-		releaseCantBreakNotif()
-	end
-
-	-- Handle "can't break" red highlight feedback
+local function updateCantBreakFeedback()
 	if currentBreakingId and not canBreakHoveredObject() then
 		if not cantBreakStartTime then
 			cantBreakStartTime = tick()
@@ -592,6 +597,52 @@ local function updateBreaking()
 			releaseCantBreakNotif()
 		end
 		cantBreakStartTime = nil
+	end
+end
+
+local function updateBreaking()
+	if isTouchBreaking then
+		-- Mobile: breaking persists until stopped by tap or out of range
+		if not currentBreakingId then return end
+
+		if not isInBreakingRange(currentBreakingId) then
+			stopBreaking()
+			return
+		end
+
+		updateCantBreakFeedback()
+	else
+		-- PC: hold mouse to break
+		if not isMouseDown then
+			if currentBreakingId then
+				stopBreaking()
+			end
+			cantBreakStartTime = nil
+			highlightTurnedRed = false
+			releaseCantBreakNotif()
+			return
+		end
+
+		local targetId = hoveredBreakableId
+
+		if not targetId then
+			if currentBreakingId then
+				stopBreaking()
+			end
+			cantBreakStartTime = nil
+			highlightTurnedRed = false
+			releaseCantBreakNotif()
+			return
+		end
+
+		if currentBreakingId ~= targetId then
+			startBreaking(targetId)
+			cantBreakStartTime = nil
+			highlightTurnedRed = false
+			releaseCantBreakNotif()
+		end
+
+		updateCantBreakFeedback()
 	end
 end
 
@@ -704,13 +755,33 @@ end
 local function onInputBegan(input: InputObject, gameProcessed: boolean)
 	if gameProcessed then return end
 
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+	if input.UserInputType == Enum.UserInputType.Touch then
+		-- Mobile: tap to start/switch/stop breaking
+		local screenX = input.Position.X
+		local screenY = input.Position.Y
+		local breakableId, model = detectBreakableUnderCursor(screenX, screenY)
+
+		if breakableId then
+			updatePreviewHighlight(breakableId, model)
+			startBreaking(breakableId, model)
+			isTouchBreaking = true
+		else
+			if currentBreakingId then
+				stopBreaking()
+			end
+		end
+	elseif input.UserInputType == Enum.UserInputType.MouseButton1 and not isMobile then
+		-- PC: hold to break
 		isMouseDown = true
 	end
 end
 
 local function onInputEnded(input: InputObject, gameProcessed: boolean)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+	if input.UserInputType == Enum.UserInputType.Touch then
+		if currentBreakingId then
+			stopBreaking()
+		end
+	elseif input.UserInputType == Enum.UserInputType.MouseButton1 and not isMobile then
 		isMouseDown = false
 		if currentBreakingId then
 			stopBreaking()
@@ -721,7 +792,9 @@ end
 --|| Update Loop ||--
 
 local function onHeartbeat(deltaTime: number)
-	updatePreview()
+	if not isMobile then
+		updatePreview()
+	end
 	updateBreaking()
 	updateMiningAnimation()
 
@@ -770,6 +843,9 @@ function BreakingController:KnitStart()
 	InventoryController = Knit.GetController("InventoryController")
 	DistanceFadeController = Knit.GetController("DistanceFadeController")
 	TextNotificationController = Knit.GetController("TextNotificationController")
+
+	-- Platform detection: mobile = touch without a physical mouse
+	isMobile = UserInputService.TouchEnabled
 
 	--startGlobalBreakingAreaFade()
 

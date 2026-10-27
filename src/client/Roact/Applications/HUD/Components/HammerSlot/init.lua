@@ -5,6 +5,7 @@
 ]=]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 local StarterPlayer = game:GetService("StarterPlayer")
 
 local Roact = require(ReplicatedStorage.Packages.Roact)
@@ -23,6 +24,7 @@ local function HammerSlot(props, hooks)
 	local onSlotClick = props.onSlotClick
 
 	local isHovered, setIsHovered = hooks.useState(false)
+	local isTouchDevice = UserInputService.TouchEnabled
 
 	local hammerImage = Images["Hammer"]
 
@@ -68,6 +70,10 @@ local function HammerSlot(props, hooks)
 			CornerRadius = Config.CornerRadius,
 		}),
 
+		UIAspectRatioConstraint = Roact.createElement("UIAspectRatioConstraint", {
+			AspectRatio = 1,
+		}),
+
 		UIStroke = Roact.createElement("UIStroke", {
 			Color = strokeColor,
 			Thickness = strokeThickness,
@@ -83,7 +89,7 @@ local function HammerSlot(props, hooks)
 
 		ItemDisplay = itemDisplay,
 
-		Keybind = Roact.createElement(FancyText, {
+		Keybind = not isTouchDevice and Roact.createElement(FancyText, {
 			Text = "H",
 			Size = UDim2.fromScale(0.3, 0.3),
 			Position = UDim2.fromScale(0.05, 0.02),
@@ -92,7 +98,7 @@ local function HammerSlot(props, hooks)
 			StrokeColor = Config.KeybindStrokeColor,
 			StrokeThickness = Config.KeybindStrokeThickness,
 			ZIndex = 4,
-		}),
+		}) or nil,
 	})
 end
 

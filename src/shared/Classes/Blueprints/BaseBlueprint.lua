@@ -144,6 +144,36 @@ function BaseBlueprint:GetAllRequiredOffsets(): { Vector3 }
 	return offsets
 end
 
+-- Get the next auto-fill slot for a given block type (mobile tap-to-fill).
+-- Returns the offset of the first visible unfilled slot matching blockType,
+-- prioritized by distance from anchor (closest first).
+function BaseBlueprint:GetNextAutoFillSlot(blockType: string): Vector3?
+	if not self.Definition then return nil end
+
+	local visibleKeys = self:GetVisibleOffsetKeys(false)
+
+	local candidates = {}
+	for _, blockReq in ipairs(self.Definition.blocks) do
+		local offsetKey = self:_OffsetToKey(blockReq.offset)
+		if blockReq.blockType == blockType
+			and not self.FilledBlocks[offsetKey]
+			and visibleKeys[offsetKey] then
+			table.insert(candidates, {
+				offset = blockReq.offset,
+				distance = blockReq.offset.Magnitude,
+			})
+		end
+	end
+
+	if #candidates == 0 then return nil end
+
+	table.sort(candidates, function(a, b)
+		return a.distance < b.distance
+	end)
+
+	return candidates[1].offset
+end
+
 -- Build a neighbor map: for each block, find all face-adjacent blocks.
 -- Two blocks are face-adjacent if their bounding boxes overlap on two axes
 -- and their edges touch (gap = 0) on the third axis.
@@ -237,11 +267,12 @@ function BaseBlueprint:GetVisibleOffsetKeys(showAll: boolean?): { [string]: bool
 		return config and config.blockSize or Vector3.new(4, 4, 4)
 	end
 
-	-- A block has support if no unfilled block exists directly below it (touching on Y, overlapping on X/Z)
 	local TOLERANCE = 0.1
-	local function hasSupport(offsetKey)
+
+	-- Find unfilled blueprint blocks directly below a given block (touching on Y, overlapping on X/Z)
+	local function getUnfilledBlocksBelow(offsetKey)
 		local blockReq = offsetKeyToBlock[offsetKey]
-		if not blockReq then return false end
+		if not blockReq then return {} end
 
 		local size = getBlockSize(blockReq)
 		local myMinY = blockReq.offset.Y - size.Y / 2
@@ -250,11 +281,11 @@ function BaseBlueprint:GetVisibleOffsetKeys(showAll: boolean?): { [string]: bool
 		local myMinZ = blockReq.offset.Z - size.Z / 2
 		local myMaxZ = blockReq.offset.Z + size.Z / 2
 
+		local below = {}
 		for _, other in ipairs(self.Definition.blocks) do
 			if other == blockReq then continue end
 			local oSize = getBlockSize(other)
 			local oMaxY = other.offset.Y + oSize.Y / 2
-			-- Is this block directly below? (its top touches our bottom, and overlaps on X/Z)
 			if math.abs(oMaxY - myMinY) < TOLERANCE then
 				local oMinX = other.offset.X - oSize.X / 2
 				local oMaxX = other.offset.X + oSize.X / 2
@@ -264,12 +295,23 @@ function BaseBlueprint:GetVisibleOffsetKeys(showAll: boolean?): { [string]: bool
 					and oMinZ < myMaxZ - TOLERANCE and myMinZ < oMaxZ - TOLERANCE then
 					local oKey = self:_OffsetToKey(other.offset)
 					if not self.FilledBlocks[oKey] then
-						return false
+						table.insert(below, oKey)
 					end
 				end
 			end
 		end
-		return true
+		return below
+	end
+
+	-- Recursively reveal unfilled support blocks below a given block
+	local function revealSupportChain(offsetKey, visibleSet)
+		local belowKeys = getUnfilledBlocksBelow(offsetKey)
+		for _, belowKey in ipairs(belowKeys) do
+			if not visibleSet[belowKey] then
+				visibleSet[belowKey] = true
+				revealSupportChain(belowKey, visibleSet)
+			end
+		end
 	end
 
 	local visible = {}
@@ -280,13 +322,20 @@ function BaseBlueprint:GetVisibleOffsetKeys(showAll: boolean?): { [string]: bool
 		visible[anchorKey] = true
 	end
 
-	-- Neighbors of filled blocks become visible, but only if supported from below
+	-- Neighbors of filled blocks become visible if all blocks below them are filled.
+	-- If not supported, reveal the unfilled blocks below instead so the player
+	-- can fill bottom-up without circular deadlocks.
 	for _, blockReq in ipairs(self.Definition.blocks) do
 		local key = self:_OffsetToKey(blockReq.offset)
 		if self.FilledBlocks[key] and neighborMap[key] then
 			for neighborKey, _ in pairs(neighborMap[key]) do
-				if hasSupport(neighborKey) then
-					visible[neighborKey] = true
+				if not self.FilledBlocks[neighborKey] then
+					local unfilledBelow = getUnfilledBlocksBelow(neighborKey)
+					if #unfilledBelow == 0 then
+						visible[neighborKey] = true
+					else
+						revealSupportChain(neighborKey, visible)
+					end
 				end
 			end
 		end

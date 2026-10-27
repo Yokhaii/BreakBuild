@@ -898,6 +898,36 @@ function BlueprintService:PlaceStructure(player, position, structureItemName)
 	return true, blueprintId
 end
 
+-- Auto-fill the next available blueprint slot with the equipped block (mobile tap-to-fill).
+-- Uses the progressive reveal order: anchor first, then adjacent supported slots.
+function BlueprintService:AutoFillBlueprintSlot(player, blueprintId, itemName)
+	local blueprints = playerBlueprints[player]
+	if not blueprints then return false, "No blueprints" end
+
+	local blueprint = blueprints[blueprintId]
+	if not blueprint then return false, "Blueprint not found" end
+
+	if blueprint.CompletedAt > 0 or blueprint.IsStructureComplete then
+		return false, "Blueprint already completed"
+	end
+
+	local itemConfig = ItemData.GetItem(itemName)
+	if not itemConfig or itemConfig.type ~= "Block" then
+		return false, "Invalid block item"
+	end
+
+	local nextOffset = blueprint:GetNextAutoFillSlot(itemName)
+	if not nextOffset then
+		return false, "No available slot for this block type"
+	end
+
+	local areaOrigin = getBuildingAreaOrigin(player)
+	local worldPosition = areaOrigin + blueprint.RelativePosition + nextOffset
+
+	local success = BuildingService:PlaceBlock(player, worldPosition, itemName)
+	return success
+end
+
 --|| Client Functions ||--
 
 function BlueprintService.Client:PlaceBlueprint(player, position, blueprintType)
@@ -918,6 +948,10 @@ end
 
 function BlueprintService.Client:PlaceStructure(player, position, structureItemName)
 	return self.Server:PlaceStructure(player, position, structureItemName)
+end
+
+function BlueprintService.Client:AutoFillBlueprintSlot(player, blueprintId, itemName)
+	return self.Server:AutoFillBlueprintSlot(player, blueprintId, itemName)
 end
 
 function BlueprintService.Client:GetPlayerBlueprints(player)

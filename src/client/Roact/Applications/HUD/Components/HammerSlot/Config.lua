@@ -1,7 +1,7 @@
 return {
-	ButtonSize = UDim2.fromOffset(50, 50),
-	ButtonPosition = UDim2.new(0, -5, 0.5, 0),
-	CornerRadius = UDim.new(0, 8),
+	ButtonSize = UDim2.fromScale(0.13, 0.85),
+	ButtonPosition = UDim2.fromScale(-0.02, 0.5),
+	CornerRadius = UDim.new(0.15, 0),
 
 	StrokeColor = Color3.fromRGB(0, 0, 0),
 	StrokeThickness = 2.5,

@@ -7,6 +7,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
 local SharedBaseBlueprint = require(ReplicatedStorage.Shared.Classes.Blueprints.BaseBlueprint)
+local Images = require(ReplicatedStorage.Shared.Data.Images)
+local BlueprintDefinitions = require(ReplicatedStorage.Shared.Data.Blueprints)
 
 local ClientBaseBlueprint = {}
 ClientBaseBlueprint.__index = ClientBaseBlueprint
@@ -57,6 +59,17 @@ local TIME_LABEL_COLOR = Color3.fromRGB(255, 255, 255)
 local TIME_LABEL_STROKE_COL = Color3.fromRGB(0, 0, 0)
 local TIME_LABEL_STROKE_W = 1.5
 
+-- Requirements billboard constants
+local REQ_BILLBOARD_OFFSET_BASE = 3
+local REQ_BILLBOARD_MAX_DIST = 40
+local REQ_BILLBOARD_WIDTH = 5
+local REQ_ROW_HEIGHT = 1.2
+local REQ_COLS = 2
+local REQ_FONT = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold)
+local REQ_TEXT_COLOR = Color3.fromRGB(255, 255, 255)
+local REQ_STROKE_COLOR = Color3.fromRGB(30, 30, 30)
+local REQ_STROKE_THICKNESS = 1.5
+
 function ClientBaseBlueprint.new(data)
 	local self = SharedBaseBlueprint.new(data)
 	setmetatable(self, ClientBaseBlueprint)
@@ -70,6 +83,8 @@ function ClientBaseBlueprint.new(data)
 	self._CraftingBillboard = nil -- BillboardGui (single, contains bar + time label)
 	self._CraftingBarFill = nil -- Fill ImageLabel inside the bar
 	self._CraftingTimeLabel = nil -- TextLabel inside the billboard
+	self._RequirementsBillboard = nil
+	self._RequirementLabels = {}
 
 	return self
 end
@@ -77,6 +92,9 @@ end
 -- Set the model reference (called when syncing from server)
 function ClientBaseBlueprint:SetModel(model: Model)
 	self.Model = model
+	if self.CompletedAt == 0 then
+		self:_CreateRequirementsBillboard()
+	end
 end
 
 -- Show hover label at a specific offset showing required block type
@@ -235,6 +253,150 @@ local function blinkGhostBlock(part, glass, ghostTransparency)
 	end)
 end
 
+-- Compute filled/total counts per unique block type
+function ClientBaseBlueprint:_ComputeBlockRequirements()
+	if not self.Definition then return {}, {} end
+
+	local requirements = {}
+	local order = {}
+
+	for _, blockReq in ipairs(self.Definition.blocks) do
+		local bt = blockReq.blockType
+		if not requirements[bt] then
+			requirements[bt] = { total = 0, filled = 0 }
+			table.insert(order, bt)
+		end
+		requirements[bt].total += 1
+
+		local offsetKey = self:_OffsetToKey(blockReq.offset)
+		local filled = self.FilledBlocks[offsetKey]
+		if filled and filled.blockType == bt then
+			requirements[bt].filled += 1
+		end
+	end
+
+	return requirements, order
+end
+
+-- Create the requirements billboard above the ghost model
+function ClientBaseBlueprint:_CreateRequirementsBillboard()
+	self:_DestroyRequirementsBillboard()
+
+	if not self.Model or not self.Definition then return end
+	if not self.Definition.blocks or #self.Definition.blocks == 0 then return end
+
+	local requirements, order = self:_ComputeBlockRequirements()
+	local numTypes = #order
+	if numTypes == 0 then return end
+
+	local numRows = math.ceil(numTypes / REQ_COLS)
+
+	local _, maxOffset = BlueprintDefinitions.GetBounds(self.Definition)
+	local offsetY = maxOffset.Y + REQ_BILLBOARD_OFFSET_BASE + 1
+
+	local billboardHeight = numRows * REQ_ROW_HEIGHT
+
+	local adornee = self.Model.PrimaryPart or self.Model:FindFirstChildWhichIsA("BasePart")
+	if not adornee then return end
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "RequirementsBillboard"
+	billboard.Size = UDim2.fromScale(REQ_BILLBOARD_WIDTH, billboardHeight)
+	billboard.StudsOffsetWorldSpace = Vector3.new(0, offsetY, 0)
+	billboard.AlwaysOnTop = true
+	billboard.LightInfluence = 0
+	billboard.MaxDistance = REQ_BILLBOARD_MAX_DIST
+	billboard.Adornee = adornee
+	billboard.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local container = Instance.new("Frame")
+	container.Name = "Container"
+	container.Size = UDim2.fromScale(1, 1)
+	container.BackgroundTransparency = 1
+	container.Parent = billboard
+
+	local grid = Instance.new("UIGridLayout")
+	grid.CellSize = UDim2.fromScale(1 / REQ_COLS, 1 / numRows)
+	grid.CellPadding = UDim2.fromScale(0, 0)
+	grid.FillDirection = Enum.FillDirection.Horizontal
+	grid.SortOrder = Enum.SortOrder.LayoutOrder
+	grid.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	grid.VerticalAlignment = Enum.VerticalAlignment.Center
+	grid.Parent = container
+
+	self._RequirementLabels = {}
+
+	for i, blockType in ipairs(order) do
+		local req = requirements[blockType]
+		local image = Images[blockType]
+
+		local entry = Instance.new("Frame")
+		entry.Name = "Entry_" .. blockType
+		entry.BackgroundTransparency = 1
+		entry.LayoutOrder = i
+		entry.Parent = container
+
+		local icon = Instance.new("ImageLabel")
+		icon.Name = "Icon"
+		icon.Size = UDim2.fromScale(0.35, 0.85)
+		icon.Position = UDim2.fromScale(0.05, 0.075)
+		icon.BackgroundTransparency = 1
+		icon.Image = image or ""
+		icon.ScaleType = Enum.ScaleType.Fit
+		icon.Parent = entry
+
+		local aspect = Instance.new("UIAspectRatioConstraint")
+		aspect.AspectRatio = 1
+		aspect.DominantAxis = Enum.DominantAxis.Height
+		aspect.Parent = icon
+
+		local label = Instance.new("TextLabel")
+		label.Name = "Count"
+		label.Size = UDim2.fromScale(0.55, 0.85)
+		label.Position = UDim2.fromScale(0.42, 0.075)
+		label.BackgroundTransparency = 1
+		label.Text = req.filled .. "/" .. req.total
+		label.TextColor3 = REQ_TEXT_COLOR
+		label.FontFace = REQ_FONT
+		label.TextScaled = true
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.Parent = entry
+
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = REQ_STROKE_COLOR
+		stroke.Thickness = REQ_STROKE_THICKNESS
+		stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+		stroke.Parent = label
+
+		self._RequirementLabels[blockType] = label
+	end
+
+	self._RequirementsBillboard = billboard
+end
+
+-- Update the filled/total text on the requirements billboard
+function ClientBaseBlueprint:_UpdateRequirementsBillboard()
+	if not self._RequirementsBillboard or not self.Definition then return end
+
+	local requirements, _ = self:_ComputeBlockRequirements()
+
+	for blockType, label in pairs(self._RequirementLabels) do
+		local req = requirements[blockType]
+		if req then
+			label.Text = req.filled .. "/" .. req.total
+		end
+	end
+end
+
+-- Destroy the requirements billboard
+function ClientBaseBlueprint:_DestroyRequirementsBillboard()
+	if self._RequirementsBillboard then
+		self._RequirementsBillboard:Destroy()
+		self._RequirementsBillboard = nil
+		self._RequirementLabels = {}
+	end
+end
+
 -- Update visuals for all blocks with progressive reveal
 function ClientBaseBlueprint:UpdateVisuals()
 	if not self.Model or not self.Definition then
@@ -271,6 +433,12 @@ function ClientBaseBlueprint:UpdateVisuals()
 		end
 
 		self._PreviouslyVisibleKeys[offsetKey] = isVisible or nil
+	end
+
+	if self.CompletedAt > 0 then
+		self:_DestroyRequirementsBillboard()
+	else
+		self:_UpdateRequirementsBillboard()
 	end
 end
 
@@ -489,6 +657,7 @@ function ClientBaseBlueprint:Destroy()
 	self:HideHoverLabel()
 	self:ClearWrongBlockHighlights()
 	self:HideCraftingProgress()
+	self:_DestroyRequirementsBillboard()
 	self.Model = nil
 end
 
