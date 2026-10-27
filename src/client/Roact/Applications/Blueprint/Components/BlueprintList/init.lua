@@ -17,8 +17,20 @@ local function BlueprintList(props, hooks)
 	local baseZIndex = props.ZIndex or 1
 	local selectedId = props.SelectedBlueprintId
 
+	-- Sort blueprints: first by requiredRebirth, then by order
+	local sortedBlueprints = {}
+	for _, blueprint in ipairs(blueprints) do
+		table.insert(sortedBlueprints, blueprint)
+	end
+	table.sort(sortedBlueprints, function(a, b)
+		if a.RequiredRebirth ~= b.RequiredRebirth then
+			return a.RequiredRebirth < b.RequiredRebirth
+		end
+		return (a.Order or 999) < (b.Order or 999)
+	end)
+
 	local cardElements = {}
-	for i, blueprint in ipairs(blueprints) do
+	for i, blueprint in ipairs(sortedBlueprints) do
 		cardElements["Blueprint_" .. i] = Roact.createElement(BlueprintCard, {
 			LayoutOrder = i,
 			Name = blueprint.Name,
@@ -56,6 +68,7 @@ local function BlueprintList(props, hooks)
 			SortOrder = Enum.SortOrder.LayoutOrder,
 			Padding = Config.Padding,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			VerticalAlignment = Enum.VerticalAlignment.Top,
 		}),
 
 		Cards = Roact.createFragment(cardElements),

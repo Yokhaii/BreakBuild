@@ -1,9 +1,25 @@
 return {
+	Charcoal = {
+		id = "Charcoal",
+		displayName = "Charcoal",
+		stationType = "Furnace",
+		craftTime = 8,
+		order = 1,
+		inputs = {
+			{ itemName = "Log", quantity = 2 },
+			{ fuelTier = 1, quantity = 2 },
+		},
+		outputs = {
+			{ itemName = "Charcoal", quantity = 1 },
+		},
+	},
+
 	IronIngot = {
 		id = "IronIngot",
 		displayName = "Iron Ingot",
 		stationType = "Furnace",
 		craftTime = 10,
+		order = 2,
 		inputs = {
 			{ itemName = "IronOre", quantity = 4 },
 			{ fuelTier = 1, quantity = 4 },
@@ -17,25 +33,13 @@ return {
 		displayName = "Sand",
 		stationType = "Furnace",
 		craftTime = 4,
+		order = 3,
 		inputs = {
 			{ itemName = "Dirt", quantity = 1 },
 			{ fuelTier = 1, quantity = 1 },
 		},
 		outputs = {
 			{ itemName = "Sand", quantity = 1 },
-		},
-	},
-	Charcoal = {
-		id = "Charcoal",
-		displayName = "Charcoal",
-		stationType = "Furnace",
-		craftTime = 8,
-		inputs = {
-			{ itemName = "Log", quantity = 2 },
-			{ fuelTier = 1, quantity = 2 },
-		},
-		outputs = {
-			{ itemName = "Charcoal", quantity = 1 },
 		},
 	},
 }

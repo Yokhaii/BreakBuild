@@ -39,6 +39,7 @@ local Chest = {
 	serverClass = "Chest",
 	maxQuantity = 1,
 	requiredRebirth = 0,
+	order = 3,
 }
 
 return Chest

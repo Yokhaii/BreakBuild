@@ -51,6 +51,7 @@ local function buildAvailableBlueprints()
 			IsUnlocked = definition.requiredRebirth == 0, -- Unlock logic can be expanded
 			RequiredRebirth = definition.requiredRebirth or 0,
 			MaxQuantity = definition.maxQuantity or 1,
+			Order = definition.order or 999,
 		})
 	end
 

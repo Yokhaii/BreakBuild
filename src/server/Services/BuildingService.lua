@@ -590,14 +590,14 @@ function BuildingService:CanPlaceBlock(player: Player, position: Vector3, itemNa
 end
 
 -- Place a block
-function BuildingService:PlaceBlock(player: Player, position: Vector3, itemName: string): boolean
+function BuildingService:PlaceBlock(player: Player, position: Vector3, itemName: string): (boolean, string?)
 	print("[BuildingService] PlaceBlock called for", player.Name, "at position:", position, "item:", itemName)
 
 	-- Validate placement
 	local canPlace, errorMsg = self:CanPlaceBlock(player, position, itemName)
 	if not canPlace then
 		warn("[BuildingService] Cannot place block:", errorMsg)
-		return false
+		return false, errorMsg
 	end
 
 	print("[BuildingService] Validation passed")
@@ -609,7 +609,7 @@ function BuildingService:PlaceBlock(player: Player, position: Vector3, itemName:
 
 	if not snappedPos then
 		warn("[BuildingService] Invalid position for block placement")
-		return false
+		return false, "Invalid position"
 	end
 
 	print("[BuildingService] Snapped position:", snappedPos, "for block size:", blockSize)
@@ -618,20 +618,20 @@ function BuildingService:PlaceBlock(player: Player, position: Vector3, itemName:
 	local inventory = InventoryService:GetInventory(player)
 	if not inventory or not inventory.EquippedSlot then
 		warn("No item equipped")
-		return false
+		return false, "No item equipped"
 	end
 
 	local equippedItem = inventory.Hotbar[inventory.EquippedSlot]
 	if not equippedItem or equippedItem.itemName ~= itemName then
 		warn("Different item equipped")
-		return false
+		return false, "Different item equipped"
 	end
 
 	-- Consume item from inventory
 	local consumed = InventoryService:RemoveItem(player, equippedItem.id, 1)
 	if not consumed then
 		warn("Failed to consume item")
-		return false
+		return false, "Failed to consume item"
 	end
 
 	-- Create block in world
@@ -639,12 +639,12 @@ function BuildingService:PlaceBlock(player: Player, position: Vector3, itemName:
 	if not blockModel then
 		-- Refund item if block creation failed
 		InventoryService:AddItem(player, itemName, 1)
-		return false
+		return false, "Failed to create block"
 	end
 
 	-- Save to player data
 	local buildingData = getBuildingData(player)
-	if not buildingData then return false end
+	if not buildingData then return false, "Building data not found" end
 
 	-- Initialize BuildingAreaId if not set
 	if not buildingData.BuildingAreaId then
@@ -657,7 +657,7 @@ function BuildingService:PlaceBlock(player: Player, position: Vector3, itemName:
 	if not area then
 		warn("[BuildingService] BuildingArea not found for saving block")
 		InventoryService:AddItem(player, itemName, 1) -- Refund
-		return false
+		return false, "Building area not found"
 	end
 
 	-- Convert world position to relative position
@@ -706,7 +706,7 @@ function BuildingService:PlaceBlock(player: Player, position: Vector3, itemName:
 		end
 	end
 
-	return true
+	return true, nil
 end
 
 -- Remove a placed block silently (no item returned - used when blocks become part of a structure)

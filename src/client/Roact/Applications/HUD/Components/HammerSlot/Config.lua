@@ -1,5 +1,5 @@
 return {
-	ButtonSize = UDim2.fromScale(0.13, 0.85),
+	ButtonSize = UDim2.fromScale(0.1, 0.8),
 	ButtonPosition = UDim2.fromScale(-0.02, 0.5),
 	CornerRadius = UDim.new(0.15, 0),
 

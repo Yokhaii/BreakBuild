@@ -86,6 +86,7 @@ local function RecipeList(props, hooks)
 			SortOrder = Enum.SortOrder.LayoutOrder,
 			Padding = Config.Padding,
 			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			VerticalAlignment = Enum.VerticalAlignment.Top,
 		}),
 
 		Cards = Roact.createFragment(cardElements),

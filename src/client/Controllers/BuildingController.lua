@@ -26,6 +26,7 @@ local ItemData = require(ReplicatedStorage.Shared.Data.Items)
 -- Controllers (resolved at KnitStart)
 local DistanceFadeController
 local BlueprintController
+local TextNotificationController
 
 -- BuildingController
 local BuildingController = Knit.CreateController({
@@ -1122,6 +1123,11 @@ local function onMouseClick()
 		local bpId = hoveredPreviewBlueprint:FindFirstChild("BlueprintId")
 		if bpId and bpId.Value then
 			BlueprintService:AutoFillBlueprintSlot(bpId.Value, currentBlockItem)
+				:andThen(function(success, errorMsg)
+					if not success and errorMsg and TextNotificationController then
+						TextNotificationController:Show(errorMsg, Color3.fromRGB(255, 80, 80))
+					end
+				end)
 				:catch(function(err)
 					warn("Error auto-filling blueprint:", err)
 				end)
@@ -1141,10 +1147,9 @@ local function onMouseClick()
 
 	-- Try to place block (returns a Promise)
 	BuildingService:PlaceBlock(currentPosition, currentBlockItem)
-		:andThen(function(success)
-			if success then
-			else
-				warn("Failed to place block - server validation failed")
+		:andThen(function(success, errorMsg)
+			if not success and errorMsg and TextNotificationController then
+				TextNotificationController:Show(errorMsg, Color3.fromRGB(255, 80, 80))
 			end
 		end)
 		:catch(function(err)
@@ -1189,6 +1194,11 @@ local function onInputBegan(input, gameProcessed)
 				local bpId = target:FindFirstChild("BlueprintId")
 				if bpId and bpId.Value then
 					BlueprintService:AutoFillBlueprintSlot(bpId.Value, currentBlockItem)
+						:andThen(function(success, errorMsg)
+							if not success and errorMsg and TextNotificationController then
+								TextNotificationController:Show(errorMsg, Color3.fromRGB(255, 80, 80))
+							end
+						end)
 						:catch(function(err)
 							warn("Error auto-filling blueprint:", err)
 						end)
@@ -1303,6 +1313,7 @@ function BuildingController:KnitStart()
 	BlueprintPlacementController = Knit.GetController("BlueprintPlacementController")
 	DistanceFadeController = Knit.GetController("DistanceFadeController")
 	BlueprintController = Knit.GetController("BlueprintController")
+	TextNotificationController = Knit.GetController("TextNotificationController")
 
 	-- Listen for zone assignment (if not yet assigned or reassigned)
 	ZoneService.ZoneAssigned:Connect(function(name)

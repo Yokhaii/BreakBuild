@@ -924,8 +924,8 @@ function BlueprintService:AutoFillBlueprintSlot(player, blueprintId, itemName)
 	local areaOrigin = getBuildingAreaOrigin(player)
 	local worldPosition = areaOrigin + blueprint.RelativePosition + nextOffset
 
-	local success = BuildingService:PlaceBlock(player, worldPosition, itemName)
-	return success
+	local success, errorMsg = BuildingService:PlaceBlock(player, worldPosition, itemName)
+	return success, errorMsg
 end
 
 --|| Client Functions ||--

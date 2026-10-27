@@ -1,23 +1,21 @@
 return {
-	-- Button
-	ButtonSize = UDim2.fromOffset(140, 32),
-	ButtonPosition = UDim2.new(0.5, 0, 0, -10),
-	ButtonAnchorPoint = Vector2.new(0.5, 1),
-	CornerRadius = UDim.new(0, 8),
+	-- Slot size and position (centered above the hotbar)
+	SlotSize = UDim2.fromScale(0.1, 0.8),
+	SlotPosition = UDim2.fromScale(1.08, 1),
+	SlotAnchorPoint = Vector2.new(0.5, 1),
 
-	-- Colors
-	ActiveColor = Color3.fromRGB(100, 160, 100),
-	HoverColor = Color3.fromRGB(120, 120, 120),
-	DefaultColor = Color3.fromRGB(90, 90, 90),
-	TextColor = Color3.fromRGB(255, 255, 255),
+	-- Colors (background)
+	ActiveBackgroundColor = Color3.fromRGB(100, 160, 100),
+	HoverBackgroundColor = Color3.fromRGB(110, 110, 110),
+	DefaultBackgroundColor = Color3.fromRGB(85, 85, 85),
 
-	-- Text
-	Text = "INVENTORY",
-	TextSize = 14,
-	Font = Font.fromEnum(Enum.Font.GothamBold),
+	-- Stroke (when active/open)
+	ActiveStrokeColor = Color3.fromRGB(120, 200, 120),
+	ActiveStrokeThickness = 3,
+	ActiveStrokeTransparency = 0.2,
 
-	-- Stroke
-	StrokeThickness = 2,
-	StrokeColor = Color3.fromRGB(0, 0, 0),
-	StrokeTransparency = 0.5,
+	-- Stroke (default)
+	DefaultStrokeColor = Color3.fromRGB(0, 0, 0),
+	DefaultStrokeThickness = 2.5,
+	DefaultStrokeTransparency = 0.5,
 }

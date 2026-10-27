@@ -27,6 +27,7 @@ local Workbench = {
 	serverClass = "Workbench",
 	maxQuantity = 1,
 	requiredRebirth = 0,
+	order = 1,
 }
 
 return Workbench

@@ -4,6 +4,7 @@ return {
 		displayName = "Spruce Plank",
 		stationType = "Inventory",
 		craftTime = 2,
+		order = 1,
 		inputs = {
 			{ itemName = "Log", quantity = 1 },
 		},
@@ -16,6 +17,7 @@ return {
 		displayName = "Half Stone",
 		stationType = "Inventory",
 		craftTime = 3,
+		order = 2,
 		inputs = {
 			{ itemName = "Stone", quantity = 1 },
 		},
@@ -28,6 +30,7 @@ return {
 		displayName = "Stone Shard",
 		stationType = "Inventory",
 		craftTime = 3,
+		order = 3,
 		inputs = {
 			{ itemName = "HalfStone", quantity = 4 },
 		},

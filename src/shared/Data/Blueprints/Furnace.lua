@@ -39,6 +39,7 @@ local Furnace = {
 	serverClass = "Furnace",
 	maxQuantity = 1,
 	requiredRebirth = 0,
+	order = 2,
 }
 
 return Furnace 
