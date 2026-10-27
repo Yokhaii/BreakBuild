@@ -10,6 +10,7 @@ local BiomeData = require(ReplicatedStorage.Shared.Data.BiomeData)
 local ItemData = require(ReplicatedStorage.Shared.Data.Items)
 
 local BreakingService
+local ZoneService
 
 local GlobalBreakingAreaService = Knit.CreateService({
 	Name = "GlobalBreakingAreaService",
@@ -19,6 +20,7 @@ local GlobalBreakingAreaService = Knit.CreateService({
 	},
 })
 
+local originPart: BasePart? = nil
 local originPosition: Vector3 = Vector3.zero
 local currentSeed: number = 0
 local cycleStartTime: number = 0
@@ -493,6 +495,31 @@ local function processPlacementQueue()
 	end
 end
 
+local function getPlayersInBreakingZone(): {Player}
+	if not originPart then return {} end
+
+	local players = {}
+	local halfSize = originPart.Size / 2
+	local center = originPart.Position
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		local character = player.Character
+		if character then
+			local hrp = character:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				local pos = hrp.Position
+				if math.abs(pos.X - center.X) <= halfSize.X
+					and math.abs(pos.Y - center.Y) <= halfSize.Y
+					and math.abs(pos.Z - center.Z) <= halfSize.Z then
+					table.insert(players, player)
+				end
+			end
+		end
+	end
+
+	return players
+end
+
 local function startCycleTimer()
 	cycleStartTime = tick()
 
@@ -511,8 +538,13 @@ local function startCycleTimer()
 					GlobalBreakingAreaService.Client.CycleReset:Fire(p)
 				end
 
-				-- Wait for transition screen to appear
+				-- Wait for transition screen to cover the view
 				task.wait(0.5)
+
+				-- Teleport players inside the breaking zone back to their zone
+				for _, player in ipairs(getPlayersInBreakingZone()) do
+					ZoneService:TeleportToZone(player)
+				end
 
 				destroyAllBlocks()
 				generateAndPlace()
@@ -526,7 +558,7 @@ local function startCycleTimer()
 end
 
 function GlobalBreakingAreaService:KnitInit()
-	local originPart = Workspace:FindFirstChild(GlobalBreakingConfig.OriginPartName)
+	originPart = Workspace:FindFirstChild(GlobalBreakingConfig.OriginPartName)
 	if originPart then
 		originPosition = originPart.Position
 	else
@@ -544,6 +576,7 @@ end
 
 function GlobalBreakingAreaService:KnitStart()
 	BreakingService = Knit.GetService("BreakingService")
+	ZoneService = Knit.GetService("ZoneService")
 
 	BreakingService.BreakableDestroyed:Connect(onGlobalBreakableDestroyed)
 
