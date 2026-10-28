@@ -82,6 +82,8 @@ local isDragging = false
 local touchStartedOnPreview = false
 local touchStartPosition = nil
 local MOBILE_TAP_THRESHOLD = 10
+local thumbstickTouches = {} -- Touches that started in thumbstick area
+local THUMBSTICK_SIZE = 200 -- Size of thumbstick detection area
 
 -- DistanceFade effect IDs
 local BUILDING_FADE_ID = "BuildingArea"
@@ -1157,6 +1159,20 @@ local function onMouseClick()
 		end)
 end
 
+-- Check if player is using thumbstick (any touch in thumbstick area)
+local function isPlayerMoving(): boolean
+	if not isMobile then return false end
+
+	-- If ANY touch is marked as thumbstick touch, block placement
+	return next(thumbstickTouches) ~= nil
+end
+
+-- Check if a position is in the thumbstick area (bottom-left)
+local function isInThumbstickArea(position: Vector3): boolean
+	local screenSize = Workspace.CurrentCamera.ViewportSize
+	return position.X <= THUMBSTICK_SIZE and position.Y >= (screenSize.Y - THUMBSTICK_SIZE)
+end
+
 -- Handle input began
 local function onInputBegan(input, gameProcessed)
 	if gameProcessed then return end
@@ -1164,6 +1180,16 @@ local function onInputBegan(input, gameProcessed)
 	if input.UserInputType == Enum.UserInputType.Touch and isMobile then
 		local screenX = input.Position.X
 		local screenY = input.Position.Y
+
+		-- Ignore touches in thumbstick area (check position directly)
+		if isInThumbstickArea(input.Position) then
+			return
+		end
+
+		-- Also ignore if thumbstick is already active from previous touch
+		if isPlayerMoving() then
+			return
+		end
 
 		if buildingMode and previewModel then
 			-- Check if tapping on preview — start drag, place on release if no movement
@@ -1252,6 +1278,15 @@ end
 local function onInputChanged(input, gameProcessed)
 	if not isMobile then return end
 	if input.UserInputType == Enum.UserInputType.Touch and isDragging and buildingMode and previewModel then
+		-- Stop updating preview if player starts moving thumbstick
+		-- (but don't hide it - leave it where it is)
+		if isPlayerMoving() then
+			isDragging = false
+			touchStartedOnPreview = false
+			touchStartPosition = nil
+			return
+		end
+
 		local screenX = input.Position.X
 		local screenY = input.Position.Y
 		local position, isValid = computeBlockPosition(screenX, screenY)
@@ -1265,13 +1300,16 @@ end
 local function onInputEnded(input, gameProcessed)
 	if not isMobile then return end
 	if input.UserInputType == Enum.UserInputType.Touch then
-		if touchStartedOnPreview and buildingMode and mobilePreviewActive then
-			local screenX = input.Position.X
-			local screenY = input.Position.Y
-			local moved = touchStartPosition and (Vector2.new(screenX, screenY) - touchStartPosition).Magnitude or 0
-			if moved < MOBILE_TAP_THRESHOLD and isValidPlacement then
-				onMouseClick()
-				hideMobilePreview()
+		-- Don't place if player is moving
+		if not isPlayerMoving() then
+			if touchStartedOnPreview and buildingMode and mobilePreviewActive then
+				local screenX = input.Position.X
+				local screenY = input.Position.Y
+				local moved = touchStartPosition and (Vector2.new(screenX, screenY) - touchStartPosition).Magnitude or 0
+				if moved < MOBILE_TAP_THRESHOLD and isValidPlacement then
+					onMouseClick()
+					hideMobilePreview()
+				end
 			end
 		end
 		isDragging = false
@@ -1332,6 +1370,21 @@ function BuildingController:KnitStart()
 	-- Platform detection
 	isMobile = UserInputService.TouchEnabled
 
+	-- Track touches in thumbstick area
+	if isMobile then
+		UserInputService.TouchStarted:Connect(function(touch, gameProcessed)
+			-- Check if touch started in thumbstick area
+			if isInThumbstickArea(touch.Position) then
+				thumbstickTouches[touch] = true
+			end
+		end)
+
+		UserInputService.TouchEnded:Connect(function(touch, gameProcessed)
+			-- Remove touch from thumbstick tracking
+			thumbstickTouches[touch] = nil
+		end)
+	end
+
 	-- Connect to inventory signals
 	InventoryService.ItemEquipped:Connect(onItemEquipped)
 	InventoryService.ItemUnequipped:Connect(onItemUnequipped)
@@ -1366,7 +1419,7 @@ function BuildingController:KnitStart()
 			end
 		end
 
-		-- Mobile: only track area entry/exit, hide preview if player left
+		-- Mobile: only track area entry/exit
 		if isMobile then
 			if not playerInBuildingArea and mobilePreviewActive then
 				hideMobilePreview()
