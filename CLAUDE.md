@@ -6,4 +6,5 @@
 @.claude/crafting-system-instructions.md
 @.claude/inventory-items-instructions.md
 @.claude/tree-system-instructions.md
+@.claude/tutorial-system-instructions.md
 @.claude/ui-system-instructions.md

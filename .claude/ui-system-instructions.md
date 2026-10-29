@@ -136,7 +136,7 @@ ScreenGui (IgnoreGuiInset, ZIndexBehavior = Global)
     └── Blueprint (blueprint selection UI)
         ├── BlueprintList
         ├── BlueprintCard / UnlockedBlueprintCard / LockedBlueprintCard
-        ├── BlueprintMaterialList
+        ├── GetButton
         └── BlueprintViewport (3D preview)
 
 ================================================================================

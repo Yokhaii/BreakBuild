@@ -2,8 +2,8 @@
 	Blueprint Application
 	Three-panel layout:
 	  Left  — PanelFrame with scrollable blueprint list
-	  Center — transparent viewport showing the selected blueprint model + TopPanelFrame title
-	  Right — PanelFrame with material requirements for the selected blueprint
+	  Center — transparent viewport showing the selected blueprint model + TopPanelFrame title + GET button
+	  Right — PanelFrame with craftable recipes for the selected blueprint
 ]=]
 
 -- Services
@@ -19,6 +19,7 @@ local Knit = require(ReplicatedStorage.Packages.Knit)
 -- Directories
 local Client = StarterPlayer.StarterPlayerScripts.Client
 local Components = Client.Roact.Components
+local TutorialTargets = require(Client.Modules.TutorialTargets)
 
 -- Components
 local PanelFrame = require(Components.Frames.PanelFrame)
@@ -29,7 +30,7 @@ local DarkOverlay = require(Components.Global.DarkOverlay)
 
 local BlueprintList = require(script.Components.BlueprintList)
 local BlueprintViewport = require(script.Components.BlueprintViewport)
-local BlueprintMaterialList = require(script.Components.BlueprintMaterialList)
+local GetButton = require(script.Components.GetButton)
 local RecipeList = require(Client.Roact.Applications.Furnace.Components.RecipeList)
 
 -- Data
@@ -62,26 +63,29 @@ local function BlueprintApplication(_, hooks)
 	end
 
 	local function onBlueprintClick(blueprintData)
-		-- First click selects; second click on the same blueprint grants it
-		if selectedBlueprint and selectedBlueprint.Id == blueprintData.Id then
-			local itemName = blueprintData.Name .. "Blueprint"
-			local InventoryService = Knit.GetService("InventoryService")
-			InventoryService:AddItem(itemName, 1)
-				:andThen(function(success)
-					if success then
-						print("Blueprint item added to inventory:", itemName)
-					else
-						warn("Failed to add blueprint item to inventory")
-					end
-				end)
-				:catch(function(err)
-					warn("Error adding blueprint item:", err)
-				end)
-			setSelectedBlueprint(nil)
-			dispatch(UIActions.setCurrentFrame("HUD"))
-		else
-			setSelectedBlueprint(blueprintData)
+		setSelectedBlueprint(blueprintData)
+	end
+
+	local function onGetClick()
+		if not selectedBlueprint then
+			return
 		end
+
+		local itemName = selectedBlueprint.Name .. "Blueprint"
+		local InventoryService = Knit.GetService("InventoryService")
+		InventoryService:AddItem(itemName, 1)
+			:andThen(function(success)
+				if success then
+					print("Blueprint item added to inventory:", itemName)
+				else
+					warn("Failed to add blueprint item to inventory")
+				end
+			end)
+			:catch(function(err)
+				warn("Error adding blueprint item:", err)
+			end)
+		setSelectedBlueprint(nil)
+		dispatch(UIActions.setCurrentFrame("HUD"))
 	end
 
 	-- Resolve the completed 3D model from ReplicatedStorage
@@ -168,12 +172,13 @@ local function BlueprintApplication(_, hooks)
 			end,
 		}) or nil,
 
-		-- Material strip — bare icon row below the viewport, no background
-		MaterialStrip = selectedBlueprint and Roact.createElement(BlueprintMaterialList, {
-			Materials = selectedBlueprint.Materials,
-			Size = Config.MaterialStripSize,
-			Position = Config.MaterialStripPosition,
-			AnchorPoint = Config.MaterialStripAnchorPoint,
+		-- GET button — below the viewport, grants the selected blueprint
+		GetButton = selectedBlueprint and Roact.createElement(GetButton, {
+			Size = Config.GetButtonSize,
+			Position = Config.GetButtonPosition,
+			AnchorPoint = Config.GetButtonAnchorPoint,
+			OnClick = onGetClick,
+			TargetRef = TutorialTargets.Ref("BlueprintGetButton_" .. selectedBlueprint.Name),
 			ZIndex = 12,
 		}) or nil,
 

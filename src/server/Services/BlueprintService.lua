@@ -33,6 +33,9 @@ local BlueprintService = Knit.CreateService({
 		CraftingProgressUpdated = Knit.CreateSignal(), -- (blueprintId, progress 0..1)
 		CraftingProgressCleared = Knit.CreateSignal(), -- (blueprintId)
 	},
+
+	-- Server-side signal fired after a blueprint is placed, filled, completed or removed: (player, blueprintId)
+	BlueprintChanged = Signal.new(),
 })
 
 -- Constants
@@ -397,6 +400,7 @@ function BlueprintService:PlaceBlueprint(player, position, blueprintType)
 
 	-- Notify client
 	self.Client.BlueprintPlaced:Fire(player, newBlueprintData)
+	self.BlueprintChanged:Fire(player, blueprintId)
 
 	print("[BlueprintService] Blueprint placed:", blueprintId)
 	return true, blueprintId
@@ -471,6 +475,7 @@ function BlueprintService:OnBlockPlacedInBlueprint(player, blueprintId, offset, 
 			y = offset.Y,
 			z = offset.Z,
 		}, blockType, isCorrect)
+		self.BlueprintChanged:Fire(player, blueprintId)
 	end
 
 	return success, isCorrect
@@ -507,6 +512,7 @@ function BlueprintService:OnBlockRemovedFromBlueprint(player, blueprintId, offse
 			y = offset.Y,
 			z = offset.Z,
 		})
+		self.BlueprintChanged:Fire(player, blueprintId)
 	end
 
 	return success
@@ -539,6 +545,7 @@ function BlueprintService:RemoveBlueprint(player, blueprintId)
 
 	-- Notify client
 	self.Client.BlueprintRemoved:Fire(player, blueprintId)
+	self.BlueprintChanged:Fire(player, blueprintId)
 
 	return true
 end
@@ -591,6 +598,7 @@ function BlueprintService:RemoveUncompletedBlueprint(player, blueprintId)
 
 	-- Notify client
 	self.Client.BlueprintRemoved:Fire(player, blueprintId)
+	self.BlueprintChanged:Fire(player, blueprintId)
 
 	print("[BlueprintService] Uncompleted blueprint removed, returned:", blueprintItemName)
 	return true, blueprintItemName
@@ -698,6 +706,7 @@ function BlueprintService:OnStructureBroken(player, blueprintId)
 
 	-- Notify client
 	self.Client.BlueprintRemoved:Fire(player, blueprintId)
+	self.BlueprintChanged:Fire(player, blueprintId)
 end
 
 -- Remove a completed structure with hammer - instant removal, returns structure item
@@ -749,6 +758,7 @@ function BlueprintService:RemoveCompletedStructure(player, blueprintId)
 
 	-- Notify client
 	self.Client.BlueprintRemoved:Fire(player, blueprintId)
+	self.BlueprintChanged:Fire(player, blueprintId)
 
 	print("[BlueprintService] Completed structure removed, gave item:", dropItemName)
 	return true, dropItemName
@@ -893,6 +903,7 @@ function BlueprintService:PlaceStructure(player, position, structureItemName)
 
 	-- Notify client
 	self.Client.StructurePlaced:Fire(player, newBlueprintData)
+	self.BlueprintChanged:Fire(player, blueprintId)
 
 	print("[BlueprintService] Structure placed:", blueprintId)
 	return true, blueprintId

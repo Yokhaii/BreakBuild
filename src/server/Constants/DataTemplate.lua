@@ -77,6 +77,14 @@ return {
 		NextBlueprintId = 1,
 	},
 
+	-- Tutorial System
+	Tutorial = {
+		-- Index into TutorialData.Tasks (0 = not started yet, decided on first load)
+		CurrentTask = 0,
+		-- True once every task is done (or skipped for players with existing progress)
+		Completed = false,
+	},
+
 	-- Chest System
 	Chest = {
 		-- Items persisted across all chest placements: array of { id, itemName, quantity }

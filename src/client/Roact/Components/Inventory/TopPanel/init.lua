@@ -24,6 +24,7 @@ local ItemSlot = require(Components.Global.ItemSlot)
 local StudBackground = require(Components.Global.StudBackground)
 local FancyText = require(Components.Global.FancyText)
 local CloseButton = require(Components.Global.CloseButton)
+local TutorialTargets = require(Client.Modules.TutorialTargets)
 
 local RecipeMatcher = require(Client.Modules.CraftingUtils.RecipeMatcher)
 local Images = require(ReplicatedStorage.Shared.Data.Images)
@@ -263,6 +264,7 @@ local function TopPanel(props, hooks)
 		FontFace = Config.CraftButtonFont,
 		ZIndex = 14,
 		AutoButtonColor = false,
+		[Roact.Ref] = TutorialTargets.Ref("InventoryCraftButton_" .. matchedRecipe.id),
 		[Roact.Event.MouseButton1Click] = function()
 			if onCraft and matchedRecipe then
 				onCraft(matchedRecipe, actualCraftCount)

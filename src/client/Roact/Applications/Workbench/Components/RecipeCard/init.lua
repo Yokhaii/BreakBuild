@@ -7,6 +7,7 @@ local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
 local Components = StarterPlayer.StarterPlayerScripts.Client.Roact.Components
 local FancyText = require(Components.Global.FancyText)
 local StudBackground = require(Components.Global.StudBackground)
+local TutorialTargets = require(StarterPlayer.StarterPlayerScripts.Client.Modules.TutorialTargets)
 
 local Images = require(ReplicatedStorage.Shared.Data.Images)
 
@@ -83,6 +84,7 @@ local function RecipeCard(props, hooks)
 		LayoutOrder = props.LayoutOrder,
 		ZIndex = baseZIndex,
 		ClipsDescendants = true,
+		[Roact.Ref] = TutorialTargets.Ref(recipe.stationType .. "Recipe_" .. recipe.id),
 		[Roact.Event.MouseButton1Click] = onClick,
 	}, {
 		UICorner = Roact.createElement("UICorner", {

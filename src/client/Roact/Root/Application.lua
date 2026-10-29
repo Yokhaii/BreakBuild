@@ -22,6 +22,7 @@ local BlueprintApplication = require(Applications.Blueprint)
 local BackpackApplication = require(Applications.Backpack)
 local Notifications = require(Applications.HUD.Components.Notifications)
 local BiomeTransition = require(Applications.BiomeTransition)
+local TutorialApplication = require(Applications.Tutorial)
 
 local function Root(props, hooks)
 	return Roact.createElement(ContextStack, {
@@ -43,6 +44,14 @@ local function GameFrame()
 			HUD = Roact.createElement(HUD),
 			Blueprint = Roact.createElement(BlueprintApplication),
 			Backpack = Roact.createElement(BackpackApplication),
+		}),
+		TutorialScreenGui = Roact.createElement("ScreenGui", {
+			IgnoreGuiInset = true,
+			ZIndexBehavior = Enum.ZIndexBehavior.Global,
+			DisplayOrder = 50,
+			ResetOnSpawn = false,
+		}, {
+			Tutorial = Roact.createElement(TutorialApplication),
 		}),
 		NotificationScreenGui = Roact.createElement("ScreenGui", {
 			IgnoreGuiInset = true,

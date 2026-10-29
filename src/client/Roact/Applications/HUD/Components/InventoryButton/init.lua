@@ -14,6 +14,7 @@ local Knit = require(ReplicatedStorage.Packages.Knit)
 
 local Components = StarterPlayer.StarterPlayerScripts.Client.Roact.Components
 local ItemSlot = require(Components.Global.ItemSlot)
+local TutorialTargets = require(StarterPlayer.StarterPlayerScripts.Client.Modules.TutorialTargets)
 
 local Images = require(ReplicatedStorage.Shared.Data.Images)
 
@@ -58,6 +59,7 @@ local function InventoryButton(props, hooks)
 		AnchorPoint = Config.SlotAnchorPoint,
 		BackgroundTransparency = 1,
 		ZIndex = props.ZIndex or 1,
+		[Roact.Ref] = TutorialTargets.Ref("InventoryButton"),
 	}, {
 		ItemSlot = Roact.createElement(ItemSlot, {
 			Image = Images.Backpack,

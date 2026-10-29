@@ -23,6 +23,9 @@ local InventoryService = Knit.CreateService({
 		ItemDropped = Knit.CreateSignal(),
 		ItemGained = Knit.CreateSignal(),
 	},
+
+	-- Server-side signal fired after every inventory change: (player)
+	InventoryChanged = Signal.new(),
 })
 
 -- Constants
@@ -242,6 +245,7 @@ end
 local function fireInventoryUpdate(self, player: Player, inventory)
 	local serialized = serializeInventory(inventory)
 	self.Client.InventoryUpdated:Fire(player, serialized)
+	self.InventoryChanged:Fire(player)
 end
 
 -- Check if player is inside their BuildingArea

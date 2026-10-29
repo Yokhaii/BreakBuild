@@ -13,6 +13,7 @@ local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
 local Components = StarterPlayer.StarterPlayerScripts.Client.Roact.Components
 local StudBackground = require(Components.Global.StudBackground)
 local FancyText = require(Components.Global.FancyText)
+local TutorialTargets = require(StarterPlayer.StarterPlayerScripts.Client.Modules.TutorialTargets)
 
 local Images = require(ReplicatedStorage.Shared.Data.Images)
 
@@ -64,6 +65,7 @@ local function HotbarSlot(props, hooks)
 		LayoutOrder = slotNumber,
 		ZIndex = baseZIndex,
 		ClipsDescendants = true,
+		[Roact.Ref] = TutorialTargets.Ref("HotbarSlot_" .. slotNumber),
 		[Roact.Event.MouseButton1Click] = function()
 			if onSlotClick then
 				onSlotClick(slotNumber)

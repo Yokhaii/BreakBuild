@@ -36,10 +36,10 @@ return {
 	TitleSize = UDim2.fromScale(0.75, 0.65),
 	TitleZIndex = 14,
 
-	-- Material strip (bottom-center, below the viewport)
-	MaterialStripSize = UDim2.fromScale(0.22, 0.06),
-	MaterialStripPosition = UDim2.fromScale(0.5, 0.78),
-	MaterialStripAnchorPoint = Vector2.new(0.5, 0.5),
+	-- GET button (bottom-center, below the viewport)
+	GetButtonSize = UDim2.fromScale(0.12, 0.07),
+	GetButtonPosition = UDim2.fromScale(0.5, 0.8),
+	GetButtonAnchorPoint = Vector2.new(0.5, 0.5),
 
 	-- Selected card highlight
 	SelectedCardStrokeColor = Color3.fromRGB(255, 200, 50),

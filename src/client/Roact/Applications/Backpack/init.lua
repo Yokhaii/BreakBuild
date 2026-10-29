@@ -85,9 +85,22 @@ local function Backpack(props, hooks)
 		local CraftingPoolActions = require(Client.Rodux.Actions.CraftingPoolActions)
 		local InventoryActions = require(Client.Rodux.Actions.InventoryActions)
 
-		-- ALWAYS clear the pool first before adding new recipe items
+		-- Clicking the same recipe again stacks another set of inputs in the pool.
+		-- Any other pool content is cleared first before adding the new recipe items.
 		local poolState = Store:getState().CraftingPoolReducer
-		if poolState and poolState.Pool and #poolState.Pool > 0 then
+		local recipeInputNames = {}
+		for _, input in ipairs(recipe.inputs) do
+			recipeInputNames[input.itemName] = true
+		end
+		local poolOnlyHasRecipeInputs = true
+		for _, entry in ipairs(poolState and poolState.Pool or {}) do
+			if not recipeInputNames[entry.itemName] then
+				poolOnlyHasRecipeInputs = false
+				break
+			end
+		end
+
+		if poolState and poolState.Pool and #poolState.Pool > 0 and not poolOnlyHasRecipeInputs then
 			-- Restore all pool items back to inventory first
 			local poolSnapshot = {}
 			for _, entry in ipairs(poolState.Pool) do
