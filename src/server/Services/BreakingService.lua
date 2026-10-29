@@ -36,7 +36,7 @@ local BreakingService = Knit.CreateService({
 		BreakableBroken = Knit.CreateSignal(), -- (breakableId, dropItem, position)
 	},
 	-- Server-side signal for spawner services to listen to
-	BreakableDestroyed = nil, -- Will be created in KnitInit
+	BreakableDestroyed = nil, -- (player, breakableId, dropItem, position, dropAmount, isGlobal) — created in KnitInit
 })
 
 -- Types
@@ -405,7 +405,7 @@ local function updateBreakingProgress()
 			end
 
 			-- Fire server-side event for spawner services
-			BreakingService.BreakableDestroyed:Fire(player, breakableId, dropItem, position)
+			BreakingService.BreakableDestroyed:Fire(player, breakableId, dropItem, position, dropAmount, false)
 
 			-- Notify client
 			BreakingService.Client.BreakableBroken:Fire(player, breakableId, dropItem, position)
@@ -476,7 +476,7 @@ local function updateBreakingProgress()
 			end
 
 			-- Fire server-side event
-			BreakingService.BreakableDestroyed:Fire(player, breakableId, dropItem, position)
+			BreakingService.BreakableDestroyed:Fire(player, breakableId, dropItem, position, dropAmount, true)
 
 			-- Notify ALL clients
 			for _, p in ipairs(Players:GetPlayers()) do

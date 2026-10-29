@@ -122,7 +122,11 @@ ScreenGui (IgnoreGuiInset, ZIndexBehavior = Global)
     │   ├── HotbarSlot (per slot)
     │   ├── InventoryButton
     │   ├── HammerSlot
-    │   └── CycleTimer (day/night)
+    │   ├── CycleTimer (day/night)
+    │   ├── SpawnButton
+    │   └── ObjectivesTracker (main + pinned objectives, see objective doc)
+    │
+    ├── Objectives (full objective list, CurrentFrame == "Objectives")
     │
     ├── Backpack (visible when BackpackOpen == true)
     │   ├── DarkOverlay (click to close)
@@ -185,7 +189,8 @@ Complete state tree:
 
 SINGLE STATE: CurrentFrame (string)
   Default: "HUD"
-  Possible values: "HUD", "None", "Workbench", "StoneCutter", "Furnace", "LogCutter"
+  Possible values: "HUD", "None", "Workbench", "StoneCutter", "Furnace", "LogCutter",
+                   "Blueprint", "Shop", "Chest", "Objectives"
 
 ACTION:
   UIActions.setCurrentFrame(frameName)

@@ -11,13 +11,21 @@ UI spotlight, hints).
 1. OVERVIEW
 ================================================================================
 
-The tutorial is an ordered list of TASKS. Each task has a GOAL checked by the
-server. While a task is active, the client works out the current SUB-STEP
-from the UI / inventory / crafting state and guides the player with:
+The tutorial is the first MAIN OBJECTIVES of the objective system (entries
+flagged `tutorial = true` in ObjectiveData.Main, see
+objective-system-instructions.md). ObjectiveService tracks their goals and moves
+on to the next one as soon as a goal is met (rewards are claimed later from the
+Objectives frame, which is NOT part of the tutorial). While one is active, the client works out
+the current SUB-STEP from the UI / inventory / crafting state and guides the
+player with:
   - a world Beam + outline Highlight from the player to a 3D target
   - a UI Spotlight (dark overlay with a hole around the element to click,
     pulsing ring, click icon, hint text)
-  - a TaskTracker card (top-right): "TUTORIAL 1/6", task title + progress, hint
+  - a TutorialGuide panel (top middle, under the CycleTimer): "TUTORIAL 1/6"
+    title + the current step explanation (hint)
+  - the HUD ObjectivesTracker shows the task line ("Collect 4 Logs 0/4") with
+    the next main objectives previewed under it
+If the player opens the Objectives frame, the hint asks them to close it.
 
 Sub-steps are recomputed every 0.1s from state, so guidance recovers if the
 player closes a menu or does things out of order. A spotlight only blocks
@@ -28,32 +36,28 @@ input while its target is visible, so it can never soft-lock the player.
 ================================================================================
 
 SERVER:
-  src/server/Services/TutorialService.lua
-    - Stores progress in PlayerData.Tutorial { CurrentTask, Completed }
-    - Evaluates the current goal on InventoryService.InventoryChanged and
-      BlueprintService.BlueprintChanged (server-side Signals)
-    - Advances through every task whose goal is already met
-    - Fires TutorialUpdated({ CurrentTask, Completed, Current, Required })
+  src/server/Services/ObjectiveService.lua
+    - Tutorial progress = PlayerData.Objectives.MainIndex (no tutorial service)
 
 CLIENT:
   src/client/Controllers/TutorialController.lua
     - taskResolvers[task.id](task, state) -> { Hint, Spotlight?, WorldTarget?, Highlight? }
     - Drives the world Beam/Highlight (local objects under the Camera)
+    - Reads the current main objective from ObjectiveReducer
     - Dispatches TutorialActions.setTutorialGuide(hint, spotlightTarget)
-    - Shows "Task complete" notifications
 
   src/client/Modules/TutorialTargets/init.lua
     - Registry of spotlightable UI elements (see section 5)
 
   src/client/Roact/Applications/Tutorial/
-    - TaskTracker, Spotlight, ClickIcon components
+    - TutorialGuide (top-middle step panel), Spotlight, ClickIcon components
     - Mounted in its own ScreenGui (TutorialScreenGui, DisplayOrder 50)
 
-  src/client/Rodux/Reducers/TutorialReducer.lua
-  src/client/Modules/Synchronization/Tutorial.lua
+  src/client/Rodux/Reducers/TutorialReducer.lua  -- { Hint, SpotlightTarget }
 
 SHARED:
-  src/shared/Data/TutorialData.lua    -- Tasks, goals, hint texts
+  src/shared/Data/ObjectiveData.lua   -- Tutorial tasks (Main, tutorial = true)
+  src/shared/Data/TutorialData.lua    -- Hint texts
   src/shared/Config/TutorialConfig.lua -- Beam/highlight visuals, intervals
 
 ================================================================================
@@ -81,16 +85,20 @@ SHARED:
                                                (grid y >= MinGridHeight),
                                                exposed ones first
 
-GOAL TYPES: CollectItem, GetBlueprint, PlaceBlueprint, CompleteBlueprint
-(see the header of TutorialData.lua).
+GOAL TYPES: see the header of ObjectiveData.lua. CollectLogs/CollectStone
+count Logs/Stone gathered while the objective is active, CraftPickaxe counts
+crafted pickaxes. Each task's reward (Dollars + items) is claimed whenever the
+player wants, from the Objectives frame.
 
 ================================================================================
 4. WHO GETS THE TUTORIAL
 ================================================================================
 
-PlayerData.Tutorial.CurrentTask = 0 means "not decided yet". On first load:
-  - Player has placed blocks/blueprints or any inventory item -> Completed = true
-  - Otherwise -> CurrentTask = 1
+PlayerData.Objectives.MainIndex = 0 means "not decided yet". On first load
+ObjectiveService migrates the old PlayerData.Tutorial, else:
+  - Player has placed blocks/blueprints or any inventory item -> first
+    non-tutorial main objective
+  - Otherwise -> MainIndex = 1 (tutorial)
 To test it again, use a fresh profile (e.g. bump the ProfileStore name in
 DataService).
 
@@ -120,9 +128,10 @@ the button will do without lifting local component state into Rodux.
 6. ADDING A TASK
 ================================================================================
 
-1. Add the task to TutorialData.Tasks (id, title, goal, + any guide fields)
-2. If the goal type is new, handle it in getGoalProgress (TutorialService)
-   and make sure something fires a re-evaluation when it can change
+1. Add a main objective with `tutorial = true` to ObjectiveData.Main, among
+   the other tutorial ones (id, title, goal, rewards + any guide fields)
+2. If the goal type is new, handle it in ObjectiveService (see
+   objective-system-instructions.md section 7)
 3. Add taskResolvers.<id> in TutorialController
 4. If it needs new UI targets, add TutorialTargets.Ref(...) to the component
 5. Add hint texts to TutorialData.Hints

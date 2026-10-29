@@ -1,5 +1,5 @@
 return {
-	-- Layering inside the TutorialScreenGui (the spotlight dims the tracker)
-	TrackerZIndex = 1,
+	-- Layering inside the TutorialScreenGui (the guide stays readable above the spotlight dim)
 	SpotlightZIndex = 10,
+	GuideZIndex = 20,
 }

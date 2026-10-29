@@ -1,60 +1,10 @@
 --[=[
 	TutorialData
-	Ordered list of onboarding tutorial tasks and the hint texts shown for each sub-step.
-
-	Goal types (evaluated server-side by TutorialService):
-	  CollectItem       — own at least `amount` of `itemName`
-	  GetBlueprint      — own the "<blueprintType>Blueprint" item (or already have one placed)
-	  PlaceBlueprint    — have a `blueprintType` blueprint placed in the BuildingArea
-	  CompleteBlueprint — have a completed `blueprintType` (progress = correctly filled slots)
-
-	The other fields of each task are read by TutorialController to build the guidance.
+	Hint texts shown by TutorialController for each sub-step of the tutorial.
+	The tutorial tasks themselves are the main objectives flagged `tutorial` in ObjectiveData.
 ]=]
 
 local TutorialData = {}
-
-TutorialData.Tasks = {
-	{
-		id = "CollectLogs",
-		title = "Collect Logs",
-		goal = { type = "CollectItem", itemName = "Log", amount = 4 },
-		materialType = "Log",
-	},
-	{
-		id = "GetWorkbenchBlueprint",
-		title = "Get the Workbench Blueprint",
-		goal = { type = "GetBlueprint", blueprintType = "Workbench" },
-		blueprintType = "Workbench",
-	},
-	{
-		id = "PlaceWorkbench",
-		title = "Place the Workbench Blueprint",
-		goal = { type = "PlaceBlueprint", blueprintType = "Workbench" },
-		blueprintType = "Workbench",
-	},
-	{
-		id = "BuildWorkbench",
-		title = "Build the Workbench",
-		goal = { type = "CompleteBlueprint", blueprintType = "Workbench" },
-		blueprintType = "Workbench",
-		blockType = "SprucePlank",
-		blockRecipeId = "SprucePlank", -- Inventory recipe used to craft the blocks
-	},
-	{
-		id = "CraftPickaxe",
-		title = "Craft a Wooden Pickaxe",
-		goal = { type = "CollectItem", itemName = "WoodenPickaxe", amount = 1 },
-		recipeId = "WoodenPickaxe", -- Station recipe (Workbench)
-		ingredientRecipeId = "SprucePlank", -- Inventory recipe used to craft the ingredients
-	},
-	{
-		id = "CollectStone",
-		title = "Collect Stone",
-		goal = { type = "CollectItem", itemName = "Stone", amount = 4 },
-		materialType = "Stone",
-		toolCategory = "Pickaxe",
-	},
-}
 
 -- %s placeholders are filled by TutorialController (recipe / station names)
 TutorialData.Hints = {
@@ -77,9 +27,7 @@ TutorialData.Hints = {
 	OpenStation = "Click your %s",
 	EquipTool = "Equip your %s",
 	CollectStone = "Break Stone in the Breaking Area",
+	CloseObjectives = "Close the Objectives menu",
 }
-
-TutorialData.TaskCompletedText = "Task complete: %s"
-TutorialData.TutorialCompletedText = "Tutorial complete!"
 
 return TutorialData

@@ -1,10 +1,13 @@
 --[[
 	TutorialController.lua
 	Client-side guidance for the onboarding tutorial.
-	The current task comes from TutorialService (TutorialReducer). From it and the
-	UI / inventory / crafting state, this controller works out the current sub-step and drives:
+	The tutorial tasks are the main objectives flagged `tutorial` in ObjectiveData; the current
+	one comes from ObjectiveReducer. From it and the UI / inventory / crafting state, this
+	controller works out the current sub-step and drives:
 	  - a world Beam (+ outline Highlight) from the player to the 3D target (log, table, blueprint, stone...)
 	  - the UI spotlight target and hint text (TutorialReducer.SpotlightTarget / Hint)
+	The tutorial only teaches the game mechanics: completing a tutorial objective moves on
+	to the next one by itself (its reward is claimed later, from the Objectives frame).
 	Sub-steps are recomputed continuously, so the guidance recovers if the player
 	closes a menu or does things out of order.
 ]]
@@ -22,6 +25,7 @@ local Knit = require(Packages.Knit)
 
 -- Data & Config
 local TutorialData = require(ReplicatedStorage.Shared.Data.TutorialData)
+local ObjectiveData = require(ReplicatedStorage.Shared.Data.ObjectiveData)
 local TutorialConfig = require(ReplicatedStorage.Shared.Config.TutorialConfig)
 local ItemData = require(ReplicatedStorage.Shared.Data.Items)
 local Recipes = require(ReplicatedStorage.Shared.Data.Recipes)
@@ -43,6 +47,7 @@ local player = Players.LocalPlayer
 -- Constants
 local HOTBAR_SIZE = 7
 local INVENTORY_BUTTON = "InventoryButton"
+local OBJECTIVES_FRAME = "Objectives"
 local Hints = TutorialData.Hints
 
 -- Frames that replace the inventory crafting panel inside the backpack
@@ -55,7 +60,6 @@ local STATION_FRAMES = {
 
 -- Private variables
 local BuildingController
-local TextNotificationController
 local zoneName: string? = nil
 local lastGuideUpdate = 0
 
@@ -456,10 +460,10 @@ end
 
 function taskResolvers.BuildWorkbench(task, state)
 	local inventoryState = state.InventoryReducer
-	local tutorialState = state.TutorialReducer
+	local progress = state.ObjectiveReducer.Progress[task.id]
 	local blockName = getDisplayName(task.blockType)
 
-	local blocksNeeded = math.max(tutorialState.Required - tutorialState.Current, 0)
+	local blocksNeeded = progress and math.max(progress.Required - progress.Current, 0) or 0
 	local blocksOwned = countItem(inventoryState, task.blockType)
 
 	if blocksOwned < blocksNeeded then
@@ -523,15 +527,25 @@ end
 
 --|| Guide Loop ||--
 
-local function resolveGuide(state)
-	local tutorialState = state.TutorialReducer
-	if tutorialState.Completed or tutorialState.CurrentTask < 1 then return nil end
+local function getTutorialObjective(state)
+	local objective = ObjectiveData.Main[state.ObjectiveReducer.MainIndex]
+	if objective and objective.tutorial then
+		return objective
+	end
+	return nil
+end
 
-	local task = TutorialData.Tasks[tutorialState.CurrentTask]
-	local resolver = task and taskResolvers[task.id]
+local function resolveGuide(state)
+	local objective = getTutorialObjective(state)
+	local resolver = objective and taskResolvers[objective.id]
 	if not resolver then return nil end
 
-	return resolver(task, state)
+	-- The Objectives frame covers the world and the HUD: close it first
+	if state.UIReducer.CurrentFrame == OBJECTIVES_FRAME then
+		return { Hint = Hints.CloseObjectives }
+	end
+
+	return resolver(objective, state)
 end
 
 local function applyGuide(guide)
@@ -557,32 +571,16 @@ local function onHeartbeat()
 	applyGuide(resolveGuide(Store:getState()))
 end
 
--- Notify the player when a task (or the whole tutorial) is completed
-local function onStoreChanged(newState, oldState)
-	local newTutorial = newState.TutorialReducer
-	local oldTutorial = oldState.TutorialReducer
-	if oldTutorial.CurrentTask < 1 or oldTutorial.Completed or not TextNotificationController then return end
-
-	if newTutorial.Completed then
-		TextNotificationController:Show(TutorialData.TutorialCompletedText, TutorialConfig.HighlightColor)
-	elseif newTutorial.CurrentTask > oldTutorial.CurrentTask then
-		local completedTask = TutorialData.Tasks[oldTutorial.CurrentTask]
-		TextNotificationController:Show(string.format(TutorialData.TaskCompletedText, completedTask.title), TutorialConfig.HighlightColor)
-	end
-end
-
 --|| Public Functions ||--
 
 function TutorialController:IsTutorialActive(): boolean
-	local tutorialState = Store:getState().TutorialReducer
-	return tutorialState.CurrentTask >= 1 and not tutorialState.Completed
+	return getTutorialObjective(Store:getState()) ~= nil
 end
 
 --|| Initialization ||--
 
 function TutorialController:KnitStart()
 	BuildingController = Knit.GetController("BuildingController")
-	TextNotificationController = Knit.GetController("TextNotificationController")
 
 	local ZoneService = Knit.GetService("ZoneService")
 	ZoneService.ZoneAssigned:Connect(function(assignedZoneName)
@@ -592,7 +590,6 @@ function TutorialController:KnitStart()
 		zoneName = zoneName or assignedZoneName
 	end)
 
-	Store.changed:connect(onStoreChanged)
 	RunService.Heartbeat:Connect(onHeartbeat)
 end
 

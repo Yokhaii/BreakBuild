@@ -77,12 +77,27 @@ return {
 		NextBlueprintId = 1,
 	},
 
-	-- Tutorial System
+	-- Legacy tutorial progress, only read once to migrate into Objectives
 	Tutorial = {
-		-- Index into TutorialData.Tasks (0 = not started yet, decided on first load)
 		CurrentTask = 0,
-		-- True once every task is done (or skipped for players with existing progress)
 		Completed = false,
+	},
+
+	-- Objective System (see ObjectiveData)
+	Objectives = {
+		-- Index into ObjectiveData.Main of the current (first not completed) main objective
+		-- (0 = not decided yet, set on first load; > #Main once the chain is finished)
+		MainIndex = 0,
+		-- Counter progress of active objectives: { [objectiveId]: number }
+		Progress = {},
+		-- Completed objectives (goal met): { [objectiveId]: true }
+		Completed = {},
+		-- Objectives whose reward was claimed: { [objectiveId]: true }
+		Claimed = {},
+		-- Side objectives pinned to the HUD (array of ids, max ObjectiveData.MaxPinned)
+		Pinned = {},
+		-- Side objectives already auto-pinned once: { [objectiveId]: true }
+		AutoPinned = {},
 	},
 
 	-- Chest System

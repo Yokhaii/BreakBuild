@@ -15,6 +15,7 @@ local Hotbar = require(script.Components.Hotbar)
 local CycleTimer = require(script.Components.CycleTimer)
 local BalanceDisplay = require(script.Components.BalanceDisplay)
 local SpawnButton = require(script.Components.SpawnButton)
+local ObjectivesTracker = require(script.Components.ObjectivesTracker)
 
 -- Component
 local function HUD(_, hooks)
@@ -38,6 +39,7 @@ local function HUD(_, hooks)
 		CycleTimer = Roact.createElement(CycleTimer),
 		BalanceDisplay = Roact.createElement(BalanceDisplay),
 		SpawnButton = Roact.createElement(SpawnButton),
+		ObjectivesTracker = Roact.createElement(ObjectivesTracker),
 	})
 end
 

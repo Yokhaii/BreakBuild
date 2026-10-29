@@ -1,4 +1,5 @@
 local Knit = require(game:GetService("ReplicatedStorage").Packages.Knit)
+local Signal = require(game:GetService("ReplicatedStorage").Packages.Signal)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
@@ -13,6 +14,9 @@ local ShopService = Knit.CreateService({
 	Client = {
 		BalanceUpdated = Knit.CreateSignal(),
 	},
+
+	-- Server-side: fired whenever a player gains Dollars. (player, amount)
+	DollarsEarned = Signal.new(),
 })
 
 local HOTBAR_SIZE = 7
@@ -210,10 +214,20 @@ function ShopService:SellItems(player: Player, sellPool: { [string]: number })
 		end
 	end
 
-	playerData.Dollars = (playerData.Dollars or 0) + totalValue
+	self:AddDollars(player, totalValue)
+	return { success = true, newBalance = playerData.Dollars }
+end
+
+-- Give Dollars to a player (sales, objective rewards...)
+function ShopService:AddDollars(player: Player, amount: number): boolean
+	local playerData = DataService:GetData(player)
+	if not playerData or amount <= 0 then return false end
+
+	playerData.Dollars = (playerData.Dollars or 0) + amount
 
 	self.Client.BalanceUpdated:Fire(player, playerData.Dollars)
-	return { success = true, newBalance = playerData.Dollars }
+	self.DollarsEarned:Fire(player, amount)
+	return true
 end
 
 function ShopService.Client:GetBalance(player: Player)

@@ -1,7 +1,7 @@
 return {
 	-- Button
 	ButtonSize = UDim2.fromScale(0.05, 0.05),
-	ButtonPosition = UDim2.fromScale(0.005, 0.5),
+	ButtonPosition = UDim2.fromScale(0.005, 0.28),
 	ButtonAnchorPoint = Vector2.new(0, 0.5),
 
 	-- Aspect Ratio (2:1 ratio - width:height)

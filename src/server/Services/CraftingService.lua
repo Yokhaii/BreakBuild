@@ -1,4 +1,5 @@
 local Knit = require(game:GetService("ReplicatedStorage").Packages.Knit)
+local Signal = require(game:GetService("ReplicatedStorage").Packages.Signal)
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -22,6 +23,9 @@ local CraftingService = Knit.CreateService({
 		-- Fired when the timer finishes but no session is open. (blueprintId, recipeId)
 		CraftReady = Knit.CreateSignal(),
 	},
+
+	-- Server-side: fired for each output item delivered by any craft. (player, itemName, quantity)
+	ItemCrafted = Signal.new(),
 })
 
 local CRAFT_COOLDOWN = 0.3
@@ -155,6 +159,7 @@ local function addOutputs(player: Player, recipe, quantity: number): boolean
 	for _, output in ipairs(recipe.outputs) do
 		local success = InventoryService:AddItem(player, output.itemName, output.quantity * quantity)
 		if not success then return false end
+		CraftingService.ItemCrafted:Fire(player, output.itemName, output.quantity * quantity)
 	end
 	return true
 end
