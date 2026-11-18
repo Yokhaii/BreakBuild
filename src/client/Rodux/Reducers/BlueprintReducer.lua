@@ -44,7 +44,8 @@ local function buildAvailableBlueprints()
 
 		table.insert(blueprints, {
 			Id = definition.id,
-			Name = definition.displayName or definition.name,
+			Name = definition.id, -- identifier: item names, models, recipes, tutorial targets
+			DisplayName = definition.displayName or definition.name,
 			Description = definition.description or "",
 			Image = "rbxassetid://0", -- Replace with actual image when available
 			Materials = materials,

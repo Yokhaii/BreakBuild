@@ -1,6 +1,6 @@
 --[[
 	Blueprint Scanner Plugin
-	Scans the BuildingArea and generates a blueprint definition
+	Scans a BuildingZone_N and generates a blueprint definition
 
 	INSTALLATION:
 	1. Save this file as BlueprintScanner.lua
@@ -10,8 +10,9 @@
 	5. You'll see "Blueprint Scanner" in the Plugins tab
 
 	USAGE:
-	1. Build your blueprint in the BuildingArea (only the blueprint blocks)
+	1. In a play test, build your blueprint in your BuildingArea (only the blueprint blocks)
 	2. Select the block you want to use as the ANCHOR (PrimaryPart) in the viewport
+	   (the zone containing it, e.g. BuildingZone_3, is the one that gets scanned)
 	3. Click "Scan Blueprint" in the toolbar
 	4. The definition will be printed to Output and copied to clipboard
 
@@ -41,25 +42,36 @@ local PLUGIN_NAME = "Blueprint Scanner"
 local toolbar = plugin:CreateToolbar(PLUGIN_NAME)
 local scanButton = toolbar:CreateButton(
 	"Scan Blueprint",
-	"Scan the BuildingArea and generate blueprint definition",
+	"Scan the selected block's BuildingZone and generate blueprint definition",
 	"rbxassetid://6031071053"
 )
 
--- Find BuildingArea in workspace
-local function findBuildingArea()
-	local buildingZone = workspace:FindFirstChild("BuildingZone")
+-- Zones are named BuildingZone_1, BuildingZone_2... (one per player, see ZoneService)
+local function isBuildingZone(instance)
+	return instance.Parent == workspace and instance.Name:match("^BuildingZone_%d+$") ~= nil
+end
+
+-- Find the BuildingZone containing the selected instance.
+-- Returns: zone, buildingArea, block (the zone's direct child holding the selection)
+local function findZoneFromSelection(selectedInstance)
+	local block = selectedInstance
+	while block.Parent and not isBuildingZone(block.Parent) do
+		block = block.Parent
+	end
+
+	local buildingZone = block.Parent
 	if not buildingZone then
-		warn("[BlueprintScanner] BuildingZone not found in workspace")
+		warn("[BlueprintScanner] Selected object is not inside a BuildingZone_N in workspace.")
 		return nil
 	end
 
 	local buildingArea = buildingZone:FindFirstChild("BuildingArea")
 	if not buildingArea then
-		warn("[BlueprintScanner] BuildingArea not found in BuildingZone")
+		warn("[BlueprintScanner] BuildingArea not found in", buildingZone.Name)
 		return nil
 	end
 
-	return buildingArea, buildingZone
+	return buildingZone, buildingArea, block
 end
 
 -- Get the position of a block (handles both Models and Parts)
@@ -176,8 +188,8 @@ local function scanBlocks(buildingZone, buildingArea)
 	return blocks
 end
 
--- Get the user-selected anchor block from the Selection service
-local function getSelectedAnchor(blocks)
+-- Get the single instance selected in the viewport
+local function getSelectedInstance()
 	local selected = Selection:Get()
 	if not selected or #selected == 0 then
 		warn("[BlueprintScanner] No block selected! Select the desired anchor block in the viewport first.")
@@ -189,27 +201,18 @@ local function getSelectedAnchor(blocks)
 		return nil
 	end
 
-	local selectedInstance = selected[1]
+	return selected[1]
+end
 
-	-- Direct instance match
+-- Find the scanned block matching the selected zone child
+local function getAnchor(blocks, anchorInstance)
 	for _, block in ipairs(blocks) do
-		if block.instance == selectedInstance then
+		if block.instance == anchorInstance then
 			return block
 		end
 	end
 
-	-- Position-based match (in case of model vs part selection)
-	local selectedPos = getBlockPosition(selectedInstance)
-	if selectedPos then
-		for _, block in ipairs(blocks) do
-			local blockPos = getBlockPosition(block.instance)
-			if blockPos and (blockPos - selectedPos).Magnitude < 1 then
-				return block
-			end
-		end
-	end
-
-	warn("[BlueprintScanner] Selected object is not a scanned block in the BuildingZone.")
+	warn("[BlueprintScanner] Selected object is not a placed block in the BuildingZone.")
 	warn("[BlueprintScanner] Make sure the selected block has a BlockId StringValue.")
 	return nil
 end
@@ -289,6 +292,7 @@ local function generateDefinition(name, offsets, anchorSize)
 	table.insert(lines, string.format('\tserverClass = "%s",', name))
 	table.insert(lines, '\tmaxQuantity = 1,')
 	table.insert(lines, '\trequiredRebirth = 0,')
+	table.insert(lines, '\torder = 999, -- position in the Blueprint menu')
 	table.insert(lines, '}')
 	table.insert(lines, "")
 	table.insert(lines, string.format("return %s", name))
@@ -325,23 +329,27 @@ end
 
 -- Main scan function
 local function scanBlueprint()
-	local buildingArea, buildingZone = findBuildingArea()
-	if not buildingArea then
-		warn("[BlueprintScanner] Could not find BuildingArea")
+	local selectedInstance = getSelectedInstance()
+	if not selectedInstance then
+		return
+	end
+
+	-- The zone to scan is the one containing the selected anchor
+	local buildingZone, buildingArea, anchorInstance = findZoneFromSelection(selectedInstance)
+	if not buildingZone then
 		return
 	end
 
 	-- Scan blocks
 	local blocks = scanBlocks(buildingZone, buildingArea)
 	if #blocks == 0 then
-		warn("[BlueprintScanner] No blocks found in BuildingArea")
+		warn("[BlueprintScanner] No blocks found in", buildingZone.Name)
 		return
 	end
 
-	print("[BlueprintScanner] Found", #blocks, "blocks")
+	print("[BlueprintScanner] Found", #blocks, "blocks in", buildingZone.Name)
 
-	-- Get user-selected anchor
-	local anchor = getSelectedAnchor(blocks)
+	local anchor = getAnchor(blocks, anchorInstance)
 	if not anchor then
 		return
 	end
@@ -393,8 +401,7 @@ end
 
 -- Connect button
 scanButton.Click:Connect(function()
-	print("[BlueprintScanner] Scanning BuildingArea...")
-	print("[BlueprintScanner] Using selected block as anchor...")
+	print("[BlueprintScanner] Scanning the selected block's BuildingZone...")
 	local success, err = pcall(scanBlueprint)
 	if not success then
 		warn("[BlueprintScanner] Error:", err)

@@ -37,4 +37,6 @@ return {
 	ButtonStudImageTransparency = 0.7,
 	ButtonTextColor = Color3.fromRGB(255, 255, 255),
 	ButtonFont = Font.fromEnum(Enum.Font.GothamBold),
+
+	SlotItemImageSize = UDim2.fromScale(0.85, 0.85),
 }

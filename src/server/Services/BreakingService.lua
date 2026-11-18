@@ -397,6 +397,9 @@ local function updateBreakingProgress()
 				giveItemToPlayer(player, dropItem, dropAmount)
 			end
 
+			-- Every completed break wears the equipped tool
+			InventoryService:WearEquippedTool(player)
+
 			-- Call custom callback if provided
 			if onBroken then
 				task.spawn(function()
@@ -468,6 +471,8 @@ local function updateBreakingProgress()
 			if dropItem and dropItem ~= "" then
 				giveItemToPlayer(player, dropItem, dropAmount)
 			end
+
+			InventoryService:WearEquippedTool(player)
 
 			if onBroken then
 				task.spawn(function()

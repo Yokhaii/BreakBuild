@@ -60,10 +60,10 @@ function ChestController:DepositItem(itemId: string, quantity: number)
 		end)
 end
 
-function ChestController:WithdrawItem(itemName: string, quantity: number)
+function ChestController:WithdrawItem(itemName: string, quantity: number, itemId: string?)
 	if not isOpen then return end
 
-	ChestService:WithdrawItem(itemName, quantity)
+	ChestService:WithdrawItem(itemName, quantity, itemId)
 		:andThen(function(result)
 			if result.success then
 				Store:dispatch(ChestActions.updateChestItems(result.items))

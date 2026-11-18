@@ -7,4 +7,6 @@ return {
 	StrokeColor = Color3.fromRGB(0, 0, 0),
 	StrokeThickness = 2,
 	StrokeTransparency = 1,
+
+	ItemImageSize = UDim2.fromScale(0.85, 0.85),
 }

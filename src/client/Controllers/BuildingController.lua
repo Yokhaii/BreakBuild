@@ -10,6 +10,7 @@ local StarterPlayer = game:GetService("StarterPlayer")
 -- Knit packages
 local Packages = ReplicatedStorage.Packages
 local Knit = require(Packages.Knit)
+local Signal = require(Packages.Signal)
 
 -- Rodux
 local Store = require(StarterPlayer.StarterPlayerScripts.Client.Rodux.Store)
@@ -31,6 +32,7 @@ local TextNotificationController
 -- BuildingController
 local BuildingController = Knit.CreateController({
 	Name = "BuildingController",
+	BuildingAreaChanged = Signal.new(), -- (inArea) local player entered/left the BuildingArea
 })
 
 -- Constants
@@ -52,8 +54,8 @@ local BlueprintPlacementController
 local buildingMode = false
 local currentBlockItem = nil
 local previewModel = nil
-local previewGlassModel = nil -- Glass copy for highlights
-local previewHighlights = {} -- Array of highlights (one per part)
+local previewGlassModel = nil -- Glass box around the preview, carries the highlight
+local previewHighlights = {} -- Highlights recolored valid/invalid (one, on the glass box)
 local currentPosition = nil
 local isValidPlacement = false
 local wallLimitTweens = {} -- Array of tweens for WallLimit pulsing animation
@@ -648,43 +650,29 @@ local function createPreviewModel(itemName: string): Model?
 	return preview
 end
 
--- Create a glass copy of the preview model and attach highlights to it
+-- Create one glass box around the preview with a single highlight (a Highlight only shows on a fully
+-- transparent part when it is Glass). One box per block keeps multi-part blocks (plank lines, log rings)
+-- from getting an outline per part.
 local function createGlassHighlight(model)
-	local highlights = {}
+	local glass = Instance.new("Part")
+	glass.Name = model.Name .. "_Glass"
+	glass.Size = model:IsA("Model") and model:GetExtentsSize() or model.Size
+	glass.CFrame = model:GetPivot()
+	glass.Transparency = 1
+	glass.Material = Enum.Material.Glass
+	glass.CanCollide = false
+	glass.CanQuery = false
+	glass.CanTouch = false
+	glass.CastShadow = false
+	glass.Anchored = true
 
-	local glassCopy = model:Clone()
-	glassCopy.Name = model.Name .. "_Glass"
+	local highlight = Instance.new("Highlight")
+	highlight.FillTransparency = 1
+	highlight.OutlineTransparency = 0.5
+	highlight.OutlineColor = HIGHLIGHT_VALID_COLOR
+	highlight.Parent = glass
 
-	local function setupGlassPart(part)
-		if part:IsA("BasePart") then
-			part.Transparency = 1
-			part.Material = Enum.Material.Glass
-			part.CanCollide = false
-			part.CanQuery = false
-			part.CanTouch = false
-			part.Anchored = true
-
-			local highlight = Instance.new("Highlight")
-			highlight.FillTransparency = 1
-			highlight.OutlineTransparency = 0.5
-			highlight.OutlineColor = HIGHLIGHT_VALID_COLOR
-			highlight.Parent = part
-			table.insert(highlights, highlight)
-		end
-	end
-
-	if glassCopy:IsA("Model") then
-		for _, descendant in ipairs(glassCopy:GetDescendants()) do
-			setupGlassPart(descendant)
-		end
-		if glassCopy.PrimaryPart then
-			setupGlassPart(glassCopy.PrimaryPart)
-		end
-	elseif glassCopy:IsA("BasePart") then
-		setupGlassPart(glassCopy)
-	end
-
-	return glassCopy, highlights
+	return glass, { highlight }
 end
 
 -- Hide mobile preview and reset state
@@ -1409,6 +1397,7 @@ function BuildingController:KnitStart()
 		if inArea ~= playerInBuildingArea then
 			playerInBuildingArea = inArea
 			Store:dispatch(InventoryActions.setHammerAvailable(inArea))
+			BuildingController.BuildingAreaChanged:Fire(inArea)
 
 			-- Auto-unequip Hammer when leaving area
 			if not inArea then

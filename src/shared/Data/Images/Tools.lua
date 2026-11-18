@@ -1,20 +1,20 @@
 return {
-	Hammer = "105924075057063",
-	WoodenPickaxe = "113873694936367",
-	StonePickaxe = "92946996626444",
-	IronPickaxe = "108016168351438",
+	Hammer = "135776303088045",
+	WoodenPickaxe = "125908060789953",
+	StonePickaxe = "131705639294992",
+	IronPickaxe = "81326905234214",
 	-- Pickaxes
-	SteelPickaxe = "120936390864282",
+	SteelPickaxe = "80790386636388",
 	-- Axes
-	WoodenAxe = "91204135195793",
-	StoneAxe = "107103945679905",
-	IronAxe = "101771244992125",
-	SteelAxe = "119111304081011",
+	WoodenAxe = "83348791721139",
+	StoneAxe = "117624506285091",
+	IronAxe = "79908499162910",
+	SteelAxe = "75934743259943",
 	-- Shovels
-	WoodenShovel = "131560380750714",
-	StoneShovel = "118490204016062",
-	IronShovel = "90798089363138",
-	SteelShovel = "107387982115812",
+	WoodenShovel = "114151326959486",
+	StoneShovel = "83414595264486",
+	IronShovel = "99123868046380",
+	SteelShovel = "111569343961637",
 	-- Swords
 	WoodenSword = "104876364070543",
 	StoneSword = "105042089451194",

@@ -17,4 +17,6 @@ return {
 	KeybindColor = Color3.fromRGB(220, 220, 220),
 	KeybindStrokeColor = Color3.fromRGB(0, 0, 0),
 	KeybindStrokeThickness = 1.5,
+
+	ItemImageSize = UDim2.fromScale(0.85, 0.85),
 }

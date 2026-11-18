@@ -90,6 +90,9 @@ TOOL-SPECIFIC (Breaking Tools):
     breakSpeed = 1.0,              -- Multiplier (higher = faster)
     toolTier = "Wood",             -- Hand/Wood/Stone/Iron/Gold/Diamond
     canBreakAll = false,           -- Bypass tier check if true
+    maxDurability = 20,            -- Completed breaks before the tool is destroyed
+                                   -- (Wood 20, Stone 100, Iron 200, Steel 500;
+                                   --  nil = unbreakable: Hammer, DevPickaxe)
   }
 
 TOOL-SPECIFIC (Combat):
@@ -178,6 +181,17 @@ IN-MEMORY (PlayerData.Inventory):
 
 NOTE: Backpack uses STRING keys ("1" to "21") for JSON/ProfileService
 compatibility. Hotbar uses numeric keys [1] to [7].
+
+TOOL DURABILITY:
+  Tools with maxDurability carry item.durability (remaining breaks).
+  - AddItem gives each such tool its own slot (quantity 1, full durability
+    unless a durability argument is passed, e.g. when withdrawn from a chest)
+  - BreakingService calls InventoryService:WearEquippedTool(player) on every
+    completed break; at 0 the tool is unequipped, removed, and ToolBroken fires
+  - Chests store each tool as its own entry with its durability
+  - Tools saved before durability existed are filled to full on load
+  - DurabilityBar (Roact/Components/Global) shows it on hotbar/backpack/chest
+    slots once the tool has been used
 
 ITEM ID FORMAT:
   "{UserId}_{NextItemId}"   -- e.g., "12345678_42"

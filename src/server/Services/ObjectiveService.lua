@@ -37,7 +37,7 @@ local ShopService
 local ObjectiveService = Knit.CreateService({
 	Name = "ObjectiveService",
 	Client = {
-		ObjectivesUpdated = Knit.CreateSignal(), -- ({ MainIndex, Progress, Completed, Claimed, Pinned })
+		ObjectivesUpdated = Knit.CreateSignal(), -- ({ MainIndex, Progress, Completed, Claimed, Pinned, TutorialSkipped })
 		ObjectiveClaimed = Knit.CreateSignal(), -- (objectiveId)
 	},
 })
@@ -218,6 +218,7 @@ local function buildState(playerData)
 		Completed = objectives.Completed,
 		Claimed = objectives.Claimed,
 		Pinned = objectives.Pinned,
+		TutorialSkipped = objectives.TutorialSkipped,
 	}
 end
 
@@ -457,6 +458,23 @@ function ObjectiveService:SetPinned(player: Player, objectiveId: string, pinned:
 	return { success = true }
 end
 
+-- Turn off the tutorial guidance only: the tutorial objectives stay in the main chain
+-- and are completed (and rewarded) normally, just without the guide.
+function ObjectiveService:SkipTutorial(player: Player)
+	local playerData = DataService:GetData(player)
+	if not playerData then
+		return { success = false, reason = "Data not loaded" }
+	end
+
+	local objectives = playerData.Objectives
+	objectives.TutorialSkipped = true
+
+	print("[ObjectiveService]", player.Name, "skipped the tutorial guidance")
+
+	syncState(self, player)
+	return { success = true }
+end
+
 --|| Client Functions ||--
 
 function ObjectiveService.Client:GetObjectivesState(player: Player)
@@ -477,6 +495,10 @@ function ObjectiveService.Client:SetPinned(player: Player, objectiveId: string, 
 		return { success = false, reason = "Invalid objective" }
 	end
 	return self.Server:SetPinned(player, objectiveId, pinned)
+end
+
+function ObjectiveService.Client:SkipTutorial(player: Player)
+	return self.Server:SkipTutorial(player)
 end
 
 --|| KnitStart ||--

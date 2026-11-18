@@ -140,7 +140,7 @@ local function BlueprintApplication(_, hooks)
 			ZIndex = 12,
 		}, {
 			Title = Roact.createElement(FancyText, {
-				Text = selectedBlueprint and selectedBlueprint.Name or "Select a Blueprint",
+				Text = selectedBlueprint and selectedBlueprint.DisplayName or "Select a Blueprint",
 				Size = Config.TitleSize,
 				Position = Config.TitlePosition,
 				AnchorPoint = Config.TitleAnchorPoint,

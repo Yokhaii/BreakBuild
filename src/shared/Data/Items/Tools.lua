@@ -10,6 +10,8 @@
 	  A tool can break materials of its tier or lower
 	- toolCategory: string - determines which type of materials this tool can break
 	  Categories: "Pickaxe" (stone/ore), "Axe" (logs), "Shovel" (dirt/sand), "Hammer" (structures)
+	- maxDurability: number? - completed breaks before the tool is destroyed (nil = unbreakable)
+	  Wood 20, Stone 100, Iron 200, Steel 500
 ]]
 
 local Tools = {
@@ -61,6 +63,7 @@ local Tools = {
 		breakSpeed = 1,
 		toolTier = "Wood",
 		toolCategory = "Pickaxe",
+		maxDurability = 20,
 	},
 
 	StonePickaxe = {
@@ -77,6 +80,7 @@ local Tools = {
 		breakSpeed = 1.5,
 		toolTier = "Stone",
 		toolCategory = "Pickaxe",
+		maxDurability = 100,
 	},
 
 	IronPickaxe = {
@@ -92,6 +96,7 @@ local Tools = {
 		breakSpeed = 2.0,
 		toolTier = "Iron",
 		toolCategory = "Pickaxe",
+		maxDurability = 200,
 	},
 
 	SteelPickaxe = {
@@ -107,6 +112,7 @@ local Tools = {
 		breakSpeed = 2.5,
 		toolTier = "Steel",
 		toolCategory = "Pickaxe",
+		maxDurability = 500,
 	},
 
 	-- Axes
@@ -123,6 +129,7 @@ local Tools = {
 		breakSpeed = 1.0,
 		toolTier = "Wood",
 		toolCategory = "Axe",
+		maxDurability = 20,
 	},
 
 	StoneAxe = {
@@ -138,6 +145,7 @@ local Tools = {
 		breakSpeed = 1.5,
 		toolTier = "Stone",
 		toolCategory = "Axe",
+		maxDurability = 100,
 	},
 
 	IronAxe = {
@@ -153,6 +161,7 @@ local Tools = {
 		breakSpeed = 2.0,
 		toolTier = "Iron",
 		toolCategory = "Axe",
+		maxDurability = 200,
 	},
 
 	SteelAxe = {
@@ -168,6 +177,7 @@ local Tools = {
 		breakSpeed = 2.5,
 		toolTier = "Steel",
 		toolCategory = "Axe",
+		maxDurability = 500,
 	},
 
 	-- Shovels
@@ -184,6 +194,7 @@ local Tools = {
 		breakSpeed = 1.0,
 		toolTier = "Wood",
 		toolCategory = "Shovel",
+		maxDurability = 20,
 	},
 
 	StoneShovel = {
@@ -199,6 +210,7 @@ local Tools = {
 		breakSpeed = 1.5,
 		toolTier = "Stone",
 		toolCategory = "Shovel",
+		maxDurability = 100,
 	},
 
 	IronShovel = {
@@ -214,6 +226,7 @@ local Tools = {
 		breakSpeed = 2.0,
 		toolTier = "Iron",
 		toolCategory = "Shovel",
+		maxDurability = 200,
 	},
 
 	SteelShovel = {
@@ -229,6 +242,7 @@ local Tools = {
 		breakSpeed = 2.5,
 		toolTier = "Steel",
 		toolCategory = "Shovel",
+		maxDurability = 500,
 	},
 
 	-- Swords (combat tools)

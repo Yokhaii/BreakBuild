@@ -98,6 +98,8 @@ return {
 		Pinned = {},
 		-- Side objectives already auto-pinned once: { [objectiveId]: true }
 		AutoPinned = {},
+		-- Tutorial guidance turned off by the player (the tutorial objectives stay in the chain)
+		TutorialSkipped = false,
 	},
 
 	-- Chest System
@@ -105,6 +107,12 @@ return {
 		-- Items persisted across all chest placements: array of { id, itemName, quantity }
 		Items = {},
 	},
+
+	-- Passive blueprints (BirdNest...): loot waiting to be collected, keyed by blueprintType.
+	-- [blueprintType] = { Stored = { { itemName, quantity }, ... } }  (one entry per trip)
+	-- Persisted across placements, like the Chest. The production timer itself lives on
+	-- each placed blueprint (PlacedBlueprints[i].passiveLastRollAt).
+	PassiveBlueprints = {},
 
 	-- Tree System
 	Tree = {

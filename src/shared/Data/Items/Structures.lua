@@ -44,6 +44,20 @@ local Structures = {
 		blueprintType = "Chest",
 		placementModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.Chest",
 	},
+
+	CompletedBirdNest = {
+		name = "CompletedBirdNest",
+		displayName = "Bird Nest",
+		type = "Structure",
+		stackable = false,
+		maxStack = 1,
+		dropable = true,
+		description = "A completed bird nest. Its bird brings back items every few minutes.",
+		modelPath = "Assets.Items.CompletedBirdNest",
+		isStructure = true,
+		blueprintType = "BirdNest",
+		placementModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.BirdNest",
+	},
 }
 
 return Structures

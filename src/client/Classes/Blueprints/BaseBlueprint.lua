@@ -6,6 +6,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
+local Knit = require(ReplicatedStorage.Packages.Knit)
 local SharedBaseBlueprint = require(ReplicatedStorage.Shared.Classes.Blueprints.BaseBlueprint)
 local Images = require(ReplicatedStorage.Shared.Data.Images)
 local BlueprintDefinitions = require(ReplicatedStorage.Shared.Data.Blueprints)
@@ -41,13 +42,13 @@ local FILL_COLOR = Color3.fromRGB(114, 114, 114)
 local FILL_IMG_TRANSP = 0.55
 
 -- Billboard world dimensions — tweak these to move / resize the widget
-local CRAFT_BILLBOARD_SIZE = UDim2.fromScale(5.4, 0.65)
+local CRAFT_BILLBOARD_SIZE = UDim2.fromScale(5.4, 1.2)
 local CRAFT_BILLBOARD_OFFSET = Vector3.new(0, 3, 0)
 local CRAFT_BILLBOARD_MAX_DIST = 60
 
 -- Layout proportions inside the billboard (all Scale values)
 -- Time label occupies the top portion; shell occupies the bottom portion
-local SHELL_HEIGHT = 0.8 -- fraction of billboard height used by the bar shell
+local SHELL_HEIGHT = 0.45 -- fraction of billboard height used by the bar shell (the rest is the time label)
 local TIME_LABEL_SIZE = UDim2.fromScale(1, 1 - SHELL_HEIGHT)
 
 local TRACK_W = 0.99 -- track width relative to shell
@@ -70,6 +71,14 @@ local REQ_TEXT_COLOR = Color3.fromRGB(255, 255, 255)
 local REQ_STROKE_COLOR = Color3.fromRGB(30, 30, 30)
 local REQ_STROKE_THICKNESS = 1.5
 
+-- Name billboard on completed structures, shown while the player is in the BuildingArea.
+-- Stacked right above the crafting progress billboard (same adornee)
+local NAME_BILLBOARD_SIZE = UDim2.fromScale(6, 0.9)
+local NAME_BILLBOARD_GAP = 0.1
+local NAME_BILLBOARD_OFFSET = CRAFT_BILLBOARD_OFFSET
+	+ Vector3.new(0, (CRAFT_BILLBOARD_SIZE.Y.Scale + NAME_BILLBOARD_SIZE.Y.Scale) / 2 + NAME_BILLBOARD_GAP, 0)
+local COMPLETED_MODEL_TIMEOUT = 5 -- BlueprintCompleted arrives before the server builds the completed model
+
 function ClientBaseBlueprint.new(data)
 	local self = SharedBaseBlueprint.new(data)
 	setmetatable(self, ClientBaseBlueprint)
@@ -85,6 +94,9 @@ function ClientBaseBlueprint.new(data)
 	self._CraftingTimeLabel = nil -- TextLabel inside the billboard
 	self._RequirementsBillboard = nil
 	self._RequirementLabels = {}
+	self._NameBillboard = nil
+	self._WaitingForCompletedModel = false
+	self._Destroyed = false
 
 	return self
 end
@@ -92,9 +104,53 @@ end
 -- Set the model reference (called when syncing from server)
 function ClientBaseBlueprint:SetModel(model: Model)
 	self.Model = model
+	self._Zone = model.Parent
 	if self.CompletedAt == 0 then
 		self:_CreateRequirementsBillboard()
 	end
+end
+
+-- The ghost model is destroyed when the blueprint completes: find the completed one by BlueprintId
+function ClientBaseBlueprint:_GetLiveModel(): Model?
+	if self.Model and self.Model.Parent then
+		return self.Model
+	end
+	if not self._Zone then
+		return nil
+	end
+	for _, child in ipairs(self._Zone:GetChildren()) do
+		local bpId = child:FindFirstChild("BlueprintId")
+		if bpId and bpId.Value == self.Id then
+			self.Model = child
+			return child
+		end
+	end
+	return nil
+end
+
+-- The completed structure model (the ghost is still there for a moment after BlueprintCompleted)
+function ClientBaseBlueprint:_GetCompletedModel(): Model?
+	local model = self:_GetLiveModel()
+	if model and model:FindFirstChild("IsCompletedStructure") then
+		return model
+	end
+	if not self._Zone then
+		return nil
+	end
+	for _, child in ipairs(self._Zone:GetChildren()) do
+		local bpId = child:FindFirstChild("BlueprintId")
+		if bpId and bpId.Value == self.Id and child:FindFirstChild("IsCompletedStructure") then
+			self.Model = child
+			return child
+		end
+	end
+	return nil
+end
+
+local function getBillboardAdornee(model: Model): Instance?
+	return model:FindFirstChild("BillboardAttach", true)
+		or model.PrimaryPart
+		or model:FindFirstChildWhichIsA("BasePart")
 end
 
 -- Show hover label at a specific offset showing required block type
@@ -236,17 +292,28 @@ function ClientBaseBlueprint:_CreateGlassProxy(ghostPart: BasePart)
 	return proxy
 end
 
+-- Ghost slot parts can carry detail parts parented under them (e.g. the plank's dark lines):
+-- the details follow the slot's transparency
+local function setGhostTransparency(part: BasePart, transparency: number)
+	part.Transparency = transparency
+	for _, detail in ipairs(part:GetDescendants()) do
+		if detail:IsA("BasePart") then
+			detail.Transparency = transparency
+		end
+	end
+end
+
 -- Blink a newly revealed ghost block and its highlight
 local function blinkGhostBlock(part, glass, ghostTransparency)
 	task.spawn(function()
 		local hl = glass and glass:FindFirstChild("GlassHighlight")
 		for i = 1, 2 do
 			if not part or not part.Parent then return end
-			part.Transparency = 1
+			setGhostTransparency(part, 1)
 			if hl then hl.OutlineTransparency = 1 end
 			task.wait(0.07)
 			if not part or not part.Parent then return end
-			part.Transparency = ghostTransparency
+			setGhostTransparency(part, ghostTransparency)
 			if hl then hl.OutlineTransparency = 0.65 end
 			task.wait(0.07)
 		end
@@ -416,7 +483,7 @@ function ClientBaseBlueprint:UpdateVisuals()
 
 		local part = self.Model:FindFirstChild(partName, true)
 		if part and part:IsA("BasePart") then
-			part.Transparency = isVisible and ghostTransparency or 1
+			setGhostTransparency(part, isVisible and ghostTransparency or 1)
 		end
 
 		-- Ensure glass proxy exists/doesn't exist (server may have already created it)
@@ -437,6 +504,7 @@ function ClientBaseBlueprint:UpdateVisuals()
 
 	if self.CompletedAt > 0 then
 		self:_DestroyRequirementsBillboard()
+		self:RefreshNameBillboard()
 	else
 		self:_UpdateRequirementsBillboard()
 	end
@@ -595,15 +663,19 @@ end
 -- Show (or create) the stud-style crafting progress billboard.
 -- progress: 0..1   secsRemaining: seconds left (nil = don't update label)
 function ClientBaseBlueprint:ShowCraftingProgress(progress: number, secsRemaining: number?)
-	if not self.Model then
+	local model = self:_GetLiveModel()
+	if not model then
 		return
 	end
 
-	local adornee = self.Model:FindFirstChild("BillboardAttach", true)
-		or self.Model.PrimaryPart
-		or self.Model:FindFirstChildWhichIsA("BasePart")
+	local adornee = getBillboardAdornee(model)
 	if not adornee then
 		return
+	end
+
+	-- Billboard built on the old ghost model: rebuild it on the live one
+	if self._CraftingBillboard and self._CraftingBillboard.Adornee ~= adornee then
+		self:HideCraftingProgress()
 	end
 
 	if not self._CraftingBillboard then
@@ -640,6 +712,93 @@ function ClientBaseBlueprint:HideCraftingProgress()
 	end
 end
 
+local function buildNameBillboard(adornee: Instance, text: string)
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "NameBillboard"
+	billboard.Size = NAME_BILLBOARD_SIZE
+	billboard.StudsOffsetWorldSpace = NAME_BILLBOARD_OFFSET
+	billboard.AlwaysOnTop = false
+	billboard.LightInfluence = 0
+	billboard.MaxDistance = CRAFT_BILLBOARD_MAX_DIST
+	billboard.Adornee = adornee
+	billboard.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local label = Instance.new("TextLabel")
+	label.Name = "NameLabel"
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = REQ_TEXT_COLOR
+	label.FontFace = REQ_FONT
+	label.TextScaled = true
+	label.Parent = billboard
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = REQ_STROKE_COLOR
+	stroke.Thickness = REQ_STROKE_THICKNESS
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+	stroke.Parent = label
+
+	return billboard
+end
+
+-- Show the structure name above a completed blueprint, only while the player is in the BuildingArea.
+-- Called on completion/load and by BlueprintPlacementController when the player enters/leaves the area
+function ClientBaseBlueprint:RefreshNameBillboard()
+	if self.CompletedAt == 0 or not self.Definition then
+		self:_DestroyNameBillboard()
+		return
+	end
+
+	local model = self:_GetCompletedModel()
+	if not model then
+		self:_DestroyNameBillboard()
+		self:_WaitForCompletedModel()
+		return
+	end
+
+	local adornee = getBillboardAdornee(model)
+	if not adornee then
+		return
+	end
+
+	if self._NameBillboard and self._NameBillboard.Adornee ~= adornee then
+		self:_DestroyNameBillboard()
+	end
+
+	if not self._NameBillboard then
+		self._NameBillboard = buildNameBillboard(adornee, self.Definition.displayName or self.Definition.name)
+	end
+
+	self._NameBillboard.Enabled = Knit.GetController("BuildingController"):IsPlayerInBuildingArea()
+end
+
+function ClientBaseBlueprint:_WaitForCompletedModel()
+	if self._WaitingForCompletedModel then
+		return
+	end
+	self._WaitingForCompletedModel = true
+
+	task.spawn(function()
+		local deadline = os.clock() + COMPLETED_MODEL_TIMEOUT
+		repeat
+			task.wait(0.1)
+		until self._Destroyed or self:_GetCompletedModel() or os.clock() > deadline
+
+		self._WaitingForCompletedModel = false
+		if not self._Destroyed and self:_GetCompletedModel() then
+			self:RefreshNameBillboard()
+		end
+	end)
+end
+
+function ClientBaseBlueprint:_DestroyNameBillboard()
+	if self._NameBillboard then
+		self._NameBillboard:Destroy()
+		self._NameBillboard = nil
+	end
+end
+
 -- Override in subclasses to react to crafting progress updates (sounds, particles, etc.).
 -- progress: 0..1
 function ClientBaseBlueprint:OnCrafting(progress: number)
@@ -654,10 +813,12 @@ end
 
 -- Cleanup
 function ClientBaseBlueprint:Destroy()
+	self._Destroyed = true
 	self:HideHoverLabel()
 	self:ClearWrongBlockHighlights()
 	self:HideCraftingProgress()
 	self:_DestroyRequirementsBillboard()
+	self:_DestroyNameBillboard()
 	self.Model = nil
 end
 

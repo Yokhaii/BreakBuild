@@ -285,6 +285,19 @@ Structure items (completed) must have:
     blueprintType = "Workbench",
   }
 
+BLOCK MODELS (BuildingParts):
+  A building part is a Part or a Model with a PrimaryPart (CreateBlockInWorld,
+  the preview and GlobalBreakingAreaService handle both).
+  Stud-style blocks (SprucePlank, CoalOreBlock, IronOreBlock) are a Model with
+  2 MeshParts: the main mesh is the PrimaryPart, the detail mesh (cross lines,
+  ore streaks) is parented UNDER it. Both are outer shells (no inner faces) so
+  transparency stays clean (preview, ghost blueprints).
+  - Breakable values go on the PrimaryPart; a hit on the detail part walks up to it.
+  - Ghost blueprints: a slot part's detail children follow its transparency
+    (setGhostTransparency) and are never picked as a slot.
+  - The placement preview outlines one glass box around the block (one Highlight).
+  Source files: 3DModel/spruce_plank.blend, 3DModel/ore_blocks.blend.
+
 ================================================================================
 11. COMMON PATTERNS
 ================================================================================

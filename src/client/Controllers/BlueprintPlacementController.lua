@@ -923,6 +923,13 @@ function BlueprintPlacementController:KnitStart()
 	BlueprintService.BlueprintCompleted:Connect(onBlueprintCompleted)
 	BlueprintService.StructurePlaced:Connect(onBlueprintPlaced) -- Structure uses same handler
 
+	-- Structure names only show while the player is in the BuildingArea
+	Knit.GetController("BuildingController").BuildingAreaChanged:Connect(function()
+		for _, blueprint in pairs(activeBlueprints) do
+			blueprint:RefreshNameBillboard()
+		end
+	end)
+
 	-- Platform detection
 	isMobile = UserInputService.TouchEnabled
 

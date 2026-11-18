@@ -27,6 +27,12 @@ player with:
     the next main objectives previewed under it
 If the player opens the Objectives frame, the hint asks them to close it.
 
+SKIPPING: the close button on the TutorialGuide title calls
+TutorialController:SkipTutorial() -> ObjectiveService:SkipTutorial(), which sets
+PlayerData.Objectives.TutorialSkipped (synced to ObjectiveReducer). It only turns
+off the guidance (guide panel, beam, spotlight): the tutorial objectives stay in
+the main chain and are completed and rewarded normally, just unguided.
+
 Sub-steps are recomputed every 0.1s from state, so guidance recovers if the
 player closes a menu or does things out of order. A spotlight only blocks
 input while its target is visible, so it can never soft-lock the player.

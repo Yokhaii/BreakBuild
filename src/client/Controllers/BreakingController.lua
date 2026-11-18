@@ -857,6 +857,12 @@ function BreakingController:KnitStart()
 	BreakingService.BreakingStopped:Connect(onBreakingStopped)
 	BreakingService.BreakableBroken:Connect(onBreakableBroken)
 
+	Knit.GetService("InventoryService").ToolBroken:Connect(function(itemName)
+		local itemConfig = ItemData.GetItem(itemName)
+		local displayName = itemConfig and itemConfig.displayName or itemName
+		TextNotificationController:Show("Your " .. displayName .. " broke!", Color3.fromRGB(255, 80, 80))
+	end)
+
 	-- Connect to GlobalBreakingAreaService events
 	GlobalBreakingAreaService.CycleReset:Connect(function()
 		for id, _ in pairs(breakableData) do

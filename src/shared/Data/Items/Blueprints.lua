@@ -41,6 +41,19 @@ local Blueprints = {
 		isBlueprintTool = true,
 		blueprintType = "Chest",
 	},
+
+	BirdNestBlueprint = {
+		name = "BirdNestBlueprint",
+		displayName = "Bird Nest Blueprint",
+		type = "Blueprint",
+		stackable = false,
+		maxStack = 1,
+		dropable = true,
+		description = "A blueprint for building a Bird Nest",
+		modelPath = "Assets.Items.Blueprint",
+		isBlueprintTool = true,
+		blueprintType = "BirdNest",
+	},
 }
 
 return Blueprints

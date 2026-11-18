@@ -11,6 +11,7 @@ local Components = Client.Roact.Components
 local PanelFrame = require(Components.Frames.PanelFrame)
 local StudBackground = require(Components.Global.StudBackground)
 local FancyText = require(Components.Global.FancyText)
+local DurabilityBar = require(Components.Global.DurabilityBar)
 
 local Images = require(ReplicatedStorage.Shared.Data.Images)
 
@@ -78,7 +79,7 @@ local function ChestApplication(props, hooks)
 		if now - last <= DOUBLE_CLICK_THRESHOLD then
 			local ChestController = Knit.GetController("ChestController")
 			if ChestController then
-				ChestController:WithdrawItem(item.itemName, item.quantity)
+				ChestController:WithdrawItem(item.itemName, item.quantity, item.id)
 			end
 			lastClickTime.value[slotIndex] = 0
 		end
@@ -131,7 +132,7 @@ local function ChestApplication(props, hooks)
 				CornerRadius = Config.SlotCornerRadius,
 			}),
 			ItemDisplay = itemImage and Roact.createElement("ImageLabel", {
-				Size = UDim2.fromScale(0.75, 0.75),
+				Size = Config.SlotItemImageSize,
 				Position = UDim2.fromScale(0.5, 0.5),
 				AnchorPoint = Vector2.new(0.5, 0.5),
 				BackgroundTransparency = 1,
@@ -150,6 +151,10 @@ local function ChestApplication(props, hooks)
 				TextXAlignment = Enum.TextXAlignment.Right,
 				ZIndex = 15,
 			}) or nil,
+			Durability = Roact.createElement(DurabilityBar, {
+				Item = item,
+				ZIndex = 15,
+			}),
 			Button = Roact.createElement("TextButton", {
 				Size = UDim2.fromScale(1, 1),
 				BackgroundTransparency = 1,

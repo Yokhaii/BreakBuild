@@ -6,6 +6,7 @@ local Ores = require(script.Ores)
 local Tools = require(script.Tools)
 local Blueprints = require(script.Blueprints)
 local Structures = require(script.Structures)
+local Seeds = require(script.Seeds)
 
 local ItemData = {}
 
@@ -34,6 +35,11 @@ end
 
 -- Add all structures (completed blueprints)
 for itemName, itemConfig in pairs(Structures) do
+	ItemData.Items[itemName] = itemConfig
+end
+
+-- Add all seeds
+for itemName, itemConfig in pairs(Seeds) do
 	ItemData.Items[itemName] = itemConfig
 end
 

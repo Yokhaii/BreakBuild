@@ -13,6 +13,7 @@ local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
 local Components = StarterPlayer.StarterPlayerScripts.Client.Roact.Components
 local StudBackground = require(Components.Global.StudBackground)
 local FancyText = require(Components.Global.FancyText)
+local DurabilityBar = require(Components.Global.DurabilityBar)
 local TutorialTargets = require(StarterPlayer.StarterPlayerScripts.Client.Modules.TutorialTargets)
 
 local Images = require(ReplicatedStorage.Shared.Data.Images)
@@ -45,7 +46,7 @@ local function HotbarSlot(props, hooks)
 	local itemDisplay = nil
 	if not isEmpty and itemImage then
 		itemDisplay = Roact.createElement("ImageLabel", {
-			Size = UDim2.fromScale(0.75, 0.75),
+			Size = Config.ItemImageSize,
 			Position = UDim2.fromScale(0.5, 0.5),
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			BackgroundTransparency = 1,
@@ -106,6 +107,11 @@ local function HotbarSlot(props, hooks)
 			TextXAlignment = Enum.TextXAlignment.Right,
 			ZIndex = baseZIndex + 3,
 		}) or nil,
+
+		Durability = Roact.createElement(DurabilityBar, {
+			Item = item,
+			ZIndex = baseZIndex + 3,
+		}),
 	})
 end
 

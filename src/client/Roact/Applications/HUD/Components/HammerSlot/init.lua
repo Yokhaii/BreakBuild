@@ -36,7 +36,7 @@ local function HammerSlot(props, hooks)
 	local itemDisplay = nil
 	if hammerImage then
 		itemDisplay = Roact.createElement("ImageLabel", {
-			Size = UDim2.fromScale(0.75, 0.75),
+			Size = Config.ItemImageSize,
 			Position = UDim2.fromScale(0.5, 0.5),
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			BackgroundTransparency = 1,

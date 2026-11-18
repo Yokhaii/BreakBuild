@@ -11,6 +11,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- Modules
+local Knit = require(ReplicatedStorage.Packages.Knit)
 local Roact = require(ReplicatedStorage.Packages.Roact)
 local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
 local RoduxHooks = require(ReplicatedStorage.Packages.Roduxhooks)
@@ -36,8 +37,16 @@ local function TutorialApplication(_, hooks)
 		return state.ObjectiveReducer.MainIndex
 	end)
 
+	local isSkipped = RoduxHooks.useSelector(hooks, function(state)
+		return state.ObjectiveReducer.TutorialSkipped
+	end)
+
+	local onSkip = hooks.useCallback(function()
+		Knit.GetController("TutorialController"):SkipTutorial()
+	end, {})
+
 	local objective = ObjectiveData.Main[mainIndex]
-	local isTutorialActive = objective ~= nil and objective.tutorial == true
+	local isTutorialActive = objective ~= nil and objective.tutorial == true and not isSkipped
 
 	if not isTutorialActive then
 		return Roact.createElement("Frame", { Visible = false, Size = UDim2.fromScale(0, 0), BackgroundTransparency = 1 })
@@ -52,6 +61,7 @@ local function TutorialApplication(_, hooks)
 			StepIndex = mainIndex,
 			StepCount = TUTORIAL_STEP_COUNT,
 			Hint = tutorialState.Hint or objective.task or objective.title,
+			OnSkip = onSkip,
 			ZIndex = Config.GuideZIndex,
 		}),
 

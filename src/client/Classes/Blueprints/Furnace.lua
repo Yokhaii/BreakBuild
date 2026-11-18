@@ -14,30 +14,28 @@ function Furnace.new(data)
 	return self
 end
 
-local function getFireEffects(model)
-	if not model then return nil, nil end
-	local particle, light
-	for _, v in ipairs(model:GetDescendants()) do
-		if not particle and v:IsA("ParticleEmitter") then particle = v end
-		if not light and v:IsA("Light") then light = v end
-		if particle and light then break end
+local function setFireEnabled(model, enabled: boolean)
+	if not model then return end
+	-- Every ParticleEmitter under the Fire part
+	local fire = model:FindFirstChild("Fire", true)
+	if fire then
+		for _, v in ipairs(fire:GetDescendants()) do
+			if v:IsA("ParticleEmitter") then v.Enabled = enabled end
+		end
 	end
-	return particle, light
+	local light = model:FindFirstChildWhichIsA("Light", true)
+	if light then light.Enabled = enabled end
 end
 
 function Furnace:OnCrafting(progress: number)
 	if self._fireActive then return end
 	self._fireActive = true
-	local particle, light = getFireEffects(self.Model)
-	if particle then particle.Enabled = true end
-	if light then light.Enabled = true end
+	setFireEnabled(self.Model, true)
 end
 
 function Furnace:OnCraftReceived()
 	self._fireActive = false
-	local particle, light = getFireEffects(self.Model)
-	if particle then particle.Enabled = false end
-	if light then light.Enabled = false end
+	setFireEnabled(self.Model, false)
 end
 
 function Furnace:_OnInteract(player)

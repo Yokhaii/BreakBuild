@@ -7,6 +7,7 @@ local defaultState = {
 	Completed = {}, -- { [objectiveId]: true } goal met
 	Claimed = {}, -- { [objectiveId]: true } reward claimed
 	Pinned = {}, -- Side objective ids pinned to the HUD
+	TutorialSkipped = false, -- Tutorial guidance turned off by the player
 }
 
 local ObjectiveReducer = Rodux.createReducer(defaultState, {
@@ -18,6 +19,7 @@ local ObjectiveReducer = Rodux.createReducer(defaultState, {
 			Completed = objectivesState.Completed or {},
 			Claimed = objectivesState.Claimed or {},
 			Pinned = objectivesState.Pinned or {},
+			TutorialSkipped = objectivesState.TutorialSkipped == true,
 		}
 	end,
 })

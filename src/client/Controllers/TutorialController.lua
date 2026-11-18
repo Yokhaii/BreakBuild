@@ -60,7 +60,9 @@ local STATION_FRAMES = {
 
 -- Private variables
 local BuildingController
+local ObjectiveService
 local zoneName: string? = nil
+local isSkipping = false
 local lastGuideUpdate = 0
 
 -- World guidance objects (local only, parented under the camera)
@@ -527,9 +529,11 @@ end
 
 --|| Guide Loop ||--
 
+-- Current tutorial objective to guide (nil once the player skipped the guidance)
 local function getTutorialObjective(state)
-	local objective = ObjectiveData.Main[state.ObjectiveReducer.MainIndex]
-	if objective and objective.tutorial then
+	local objectivesState = state.ObjectiveReducer
+	local objective = ObjectiveData.Main[objectivesState.MainIndex]
+	if objective and objective.tutorial and not objectivesState.TutorialSkipped then
 		return objective
 	end
 	return nil
@@ -577,10 +581,31 @@ function TutorialController:IsTutorialActive(): boolean
 	return getTutorialObjective(Store:getState()) ~= nil
 end
 
+-- Turn off the tutorial guidance (the guide clears itself once the server syncs TutorialSkipped);
+-- the tutorial objectives stay in the main chain
+function TutorialController:SkipTutorial()
+	if isSkipping or not self:IsTutorialActive() then return end
+	isSkipping = true
+
+	ObjectiveService:SkipTutorial()
+		:andThen(function(result)
+			if result and not result.success then
+				warn("[TutorialController] Skip failed:", result.reason)
+			end
+		end)
+		:catch(function(err)
+			warn("[TutorialController] Skip request failed:", err)
+		end)
+		:finally(function()
+			isSkipping = false
+		end)
+end
+
 --|| Initialization ||--
 
 function TutorialController:KnitStart()
 	BuildingController = Knit.GetController("BuildingController")
+	ObjectiveService = Knit.GetService("ObjectiveService")
 
 	local ZoneService = Knit.GetService("ZoneService")
 	ZoneService.ZoneAssigned:Connect(function(assignedZoneName)

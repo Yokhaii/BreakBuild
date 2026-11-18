@@ -15,6 +15,7 @@ local Knit = require(ReplicatedStorage.Packages.Knit)
 local Components = StarterPlayer.StarterPlayerScripts.Client.Roact.Components
 local StudBackground = require(Components.Global.StudBackground)
 local FancyText = require(Components.Global.FancyText)
+local DurabilityBar = require(Components.Global.DurabilityBar)
 
 local Images = require(ReplicatedStorage.Shared.Data.Images)
 
@@ -92,7 +93,7 @@ local function BackpackSlot(props, hooks)
 	local itemDisplay = nil
 	if not isEmpty and itemImage then
 		itemDisplay = Roact.createElement("ImageLabel", {
-			Size = UDim2.fromScale(0.75, 0.75),
+			Size = Config.ItemImageSize,
 			Position = UDim2.fromScale(0.5, 0.5),
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			BackgroundTransparency = 1,
@@ -143,6 +144,11 @@ local function BackpackSlot(props, hooks)
 			TextXAlignment = Enum.TextXAlignment.Right,
 			ZIndex = 15,
 		}) or nil,
+
+		Durability = Roact.createElement(DurabilityBar, {
+			Item = item,
+			ZIndex = 15,
+		}),
 
 		Button = Roact.createElement("TextButton", {
 			Size = UDim2.fromScale(1, 1),

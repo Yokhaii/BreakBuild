@@ -128,7 +128,7 @@ local function BlueprintCard(props, hooks)
 				}),
 
 				Title = Roact.createElement(FancyText, {
-					Text = props.Name or "Blueprint",
+					Text = props.DisplayName or props.Name or "Blueprint",
 					Size = Config.TitleSize,
 					TextColor3 = Config.TitleColor,
 					StrokeColor = Config.TitleStrokeColor,

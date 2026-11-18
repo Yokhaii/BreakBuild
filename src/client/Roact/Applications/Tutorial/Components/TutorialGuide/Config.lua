@@ -8,6 +8,11 @@ return {
 	-- Title ("TUTORIAL 1/6")
 	TitleText = "TUTORIAL %d/%d",
 
+	-- Close button skipping the tutorial (right side of the title bar, square fitted in this size)
+	SkipButtonPosition = UDim2.fromScale(0.985, 0.19), -- 0.19 = middle of the title (TitleShare / 2)
+	SkipButtonAnchorPoint = Vector2.new(1, 0.5),
+	SkipButtonSize = UDim2.fromScale(0.1, 0.28), -- Height-bound: ~75% of the title bar
+
 	-- Step explanation
 	HintSize = UDim2.fromScale(1, 1),
 	HintColor = Color3.fromRGB(255, 255, 255),

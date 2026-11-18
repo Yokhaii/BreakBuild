@@ -37,9 +37,14 @@ local function getChestInstance(player: Player, blueprintId: string)
 	return blueprints[blueprintId]
 end
 
-local function addItem(chestData, itemName: string, quantity: number, itemId: string)
+-- Tools with durability get their own entry so their durability is kept
+local function addItem(chestData, itemName: string, quantity: number, itemId: string, durability: number?)
+	if durability then
+		table.insert(chestData.Items, { id = itemId, itemName = itemName, quantity = 1, durability = durability })
+		return
+	end
 	for _, entry in ipairs(chestData.Items) do
-		if entry.itemName == itemName then
+		if entry.itemName == itemName and not entry.durability then
 			entry.quantity = entry.quantity + quantity
 			return
 		end
@@ -52,7 +57,7 @@ local function removeItem(chestData, itemName: string, quantity: number): number
 	for i = #chestData.Items, 1, -1 do
 		if removed >= quantity then break end
 		local entry = chestData.Items[i]
-		if entry.itemName == itemName then
+		if entry.itemName == itemName and not entry.durability then
 			local take = math.min(entry.quantity, quantity - removed)
 			entry.quantity = entry.quantity - take
 			removed = removed + take
@@ -78,15 +83,15 @@ function ChestService.Client:DepositItem(player: Player, itemId: string, quantit
 	return self.Server:DepositItem(player, itemId, quantity)
 end
 
-function ChestService.Client:WithdrawItem(player: Player, itemName: string, quantity: number)
-	return self.Server:WithdrawItem(player, itemName, quantity)
+function ChestService.Client:WithdrawItem(player: Player, itemName: string, quantity: number, itemId: string?)
+	return self.Server:WithdrawItem(player, itemName, quantity, itemId)
 end
 
 --|| Server Functions ||--
 
 function ChestService:OpenChest(player: Player, blueprintId: string)
 	local chest = getChestInstance(player, blueprintId)
-	if not chest then
+	if not chest or chest.BlueprintType ~= "Chest" then
 		return { success = false, reason = "Chest not found" }
 	end
 	if not chest:CanPlayerUse(player.UserId) then
@@ -99,11 +104,18 @@ function ChestService:OpenChest(player: Player, blueprintId: string)
 	end
 
 	openSessions[player] = blueprintId
+	chest:Open()
 	return { success = true, items = chestData.Items }
 end
 
 function ChestService:CloseChest(player: Player)
+	local blueprintId = openSessions[player]
 	openSessions[player] = nil
+
+	local chest = blueprintId and getChestInstance(player, blueprintId)
+	if chest then
+		chest:Close()
+	end
 	return { success = true }
 end
 
@@ -117,27 +129,30 @@ function ChestService:DepositItem(player: Player, itemId: string, quantity: numb
 		return { success = false, reason = "No inventory" }
 	end
 
-	-- Find item name by ID
-	local itemName = nil
+	-- Find item by ID
+	local foundItem = nil
 	for slot = 1, 7 do
 		local item = inventory.Hotbar[slot]
 		if item and item.id == itemId then
-			itemName = item.itemName
+			foundItem = item
 			break
 		end
 	end
-	if not itemName then
+	if not foundItem then
 		for slot = 1, 21 do
 			local item = inventory.Backpack[tostring(slot)]
 			if item and item.id == itemId then
-				itemName = item.itemName
+				foundItem = item
 				break
 			end
 		end
 	end
-	if not itemName then
+	if not foundItem then
 		return { success = false, reason = "Item not found in inventory" }
 	end
+
+	local itemName = foundItem.itemName
+	local durability = foundItem.durability
 
 	local removed = InventoryService:RemoveItem(player, itemId, quantity)
 	if not removed then
@@ -145,13 +160,13 @@ function ChestService:DepositItem(player: Player, itemId: string, quantity: numb
 	end
 
 	local chestData = getChestData(player)
-	addItem(chestData, itemName, quantity, itemId)
+	addItem(chestData, itemName, quantity, itemId, durability)
 
 	self.Client.ChestUpdated:Fire(player, chestData.Items)
 	return { success = true, items = chestData.Items }
 end
 
-function ChestService:WithdrawItem(player: Player, itemName: string, quantity: number)
+function ChestService:WithdrawItem(player: Player, itemName: string, quantity: number, itemId: string?)
 	if not openSessions[player] then
 		return { success = false, reason = "Chest not open" }
 	end
@@ -161,9 +176,24 @@ function ChestService:WithdrawItem(player: Player, itemName: string, quantity: n
 		return { success = false, reason = "No player data" }
 	end
 
+	-- Tools come back one by one with their own durability
+	if itemId then
+		for i, entry in ipairs(chestData.Items) do
+			if entry.id == itemId and entry.durability then
+				local added = InventoryService:AddItem(player, entry.itemName, 1, true, entry.durability)
+				if not added then
+					return { success = false, reason = "Inventory full" }
+				end
+				table.remove(chestData.Items, i)
+				self.Client.ChestUpdated:Fire(player, chestData.Items)
+				return { success = true, items = chestData.Items }
+			end
+		end
+	end
+
 	local available = 0
 	for _, entry in ipairs(chestData.Items) do
-		if entry.itemName == itemName then
+		if entry.itemName == itemName and not entry.durability then
 			available = available + entry.quantity
 		end
 	end

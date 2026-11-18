@@ -338,7 +338,7 @@ function InventoryController:StartDragFromChest(item)
 		if targetGridIndex and targetGridIndex >= 1 then
 			local ChestController = Knit.GetController("ChestController")
 			if ChestController then
-				ChestController:WithdrawItem(item.itemName, item.quantity)
+				ChestController:WithdrawItem(item.itemName, item.quantity, item.id)
 			end
 		end
 	end

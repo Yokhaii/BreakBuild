@@ -34,6 +34,7 @@ local function BlueprintList(props, hooks)
 		cardElements["Blueprint_" .. i] = Roact.createElement(BlueprintCard, {
 			LayoutOrder = i,
 			Name = blueprint.Name,
+			DisplayName = blueprint.DisplayName,
 			Description = blueprint.Description,
 			BlueprintData = blueprint,
 			IsUnlocked = blueprint.IsUnlocked ~= false,

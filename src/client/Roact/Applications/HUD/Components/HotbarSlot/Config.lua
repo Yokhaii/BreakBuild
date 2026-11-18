@@ -20,4 +20,6 @@ return {
 	AmountColor = Color3.fromRGB(255, 255, 255),
 	AmountStrokeColor = Color3.fromRGB(0, 0, 0),
 	AmountStrokeThickness = 1.5,
+
+	ItemImageSize = UDim2.fromScale(0.85, 0.85),
 }

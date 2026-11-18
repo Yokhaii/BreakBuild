@@ -130,13 +130,24 @@ function ServerBaseBlueprint:_CreateGlassProxy(ghostPart: BasePart)
 	return proxy
 end
 
--- Find the part in a model closest to a target world position
+-- Ghost slot parts can carry detail parts parented under them (e.g. the plank's dark lines):
+-- the details follow the slot's transparency
+local function setGhostTransparency(part: BasePart, transparency: number)
+	part.Transparency = transparency
+	for _, detail in ipairs(part:GetDescendants()) do
+		if detail:IsA("BasePart") then
+			detail.Transparency = transparency
+		end
+	end
+end
+
+-- Find the part in a model closest to a target world position (detail parts are never a slot)
 local MATCH_TOLERANCE = 3
 local function findPartAtPosition(model, targetWorldPos)
 	local bestPart = nil
 	local bestDist = math.huge
 	for _, desc in ipairs(model:GetDescendants()) do
-		if desc:IsA("BasePart") then
+		if desc:IsA("BasePart") and not desc.Parent:IsA("BasePart") then
 			local dist = (desc.Position - targetWorldPos).Magnitude
 			if dist < bestDist then
 				bestDist = dist
@@ -201,7 +212,7 @@ function ServerBaseBlueprint:CreateModel(buildingAreaOrigin: Vector3, parentZone
 		if part then
 			part.Name = "GhostBlock_" .. offsetKey
 			local isVisible = not self.FilledBlocks[offsetKey] and visibleKeys[offsetKey]
-			part.Transparency = isVisible and transparency or 1
+			setGhostTransparency(part, isVisible and transparency or 1)
 
 			if isVisible then
 				self:_CreateGlassProxy(part)
@@ -269,7 +280,7 @@ function ServerBaseBlueprint:UpdateBlockVisuals()
 
 		local part = self.Model:FindFirstChild(partName)
 		if part and part:IsA("BasePart") then
-			part.Transparency = isVisible and transparency or 1
+			setGhostTransparency(part, isVisible and transparency or 1)
 		end
 
 		local glass = self.Model:FindFirstChild(glassName)
@@ -380,9 +391,10 @@ function ServerBaseBlueprint:CreateCompletedModel(buildingAreaOrigin: Vector3, p
 end
 
 -- Play a wave animation on the model parts
-function ServerBaseBlueprint:_PlayPlacementAnimation(model: Model, centerPosition: Vector3)
+-- Returns how long the whole wave takes (seconds)
+function ServerBaseBlueprint:_PlayPlacementAnimation(model: Model, centerPosition: Vector3): number
 	if not model then
-		return
+		return 0
 	end
 
 	local parts = {}
@@ -421,6 +433,8 @@ function ServerBaseBlueprint:_PlayPlacementAnimation(model: Model, centerPositio
 			end
 		end)
 	end
+
+	return WAVE_DELAY_PER_DISTANCE * #parts + WAVE_DURATION
 end
 
 -- Get the breakable ID for this completed structure

@@ -22,6 +22,7 @@ local InventoryService = Knit.CreateService({
 		ItemUnequipped = Knit.CreateSignal(),
 		ItemDropped = Knit.CreateSignal(),
 		ItemGained = Knit.CreateSignal(),
+		ToolBroken = Knit.CreateSignal(), -- (itemName)
 	},
 
 	-- Server-side signal fired after every inventory change: (player)
@@ -38,6 +39,7 @@ type InventoryItem = {
 	id: string,
 	itemName: string,
 	quantity: number,
+	durability: number?, -- remaining breaks, only on tools with maxDurability
 }
 
 -- Private variables
@@ -183,6 +185,60 @@ local function findFirstEmptyBackpackSlot(inventory): number?
 	return nil
 end
 
+-- Tools saved before durability existed start at full durability
+local function ensureToolDurability(inventory)
+	local function fill(item)
+		if not item then return end
+		local itemConfig = ItemData.GetItem(item.itemName)
+		if itemConfig and itemConfig.maxDurability and item.durability == nil then
+			item.durability = itemConfig.maxDurability
+		end
+	end
+
+	for slot = 1, HOTBAR_SIZE do
+		fill(inventory.Hotbar[slot])
+	end
+	for slot = 1, BACKPACK_SIZE do
+		fill(bpGet(inventory.Backpack, slot))
+	end
+end
+
+local function countFreeSlots(inventory, useHotbar: boolean): number
+	local count = 0
+	if useHotbar then
+		for slot = 1, HOTBAR_SIZE do
+			if not inventory.Hotbar[slot] then
+				count = count + 1
+			end
+		end
+	end
+	for slot = 1, BACKPACK_SIZE do
+		if not bpGet(inventory.Backpack, slot) then
+			count = count + 1
+		end
+	end
+	return count
+end
+
+-- Put an item in the first free slot (hotbar first if allowed). Returns false when full.
+local function insertIntoFreeSlot(inventory, newItem, useHotbar: boolean): boolean
+	if useHotbar then
+		for slot = 1, HOTBAR_SIZE do
+			if not inventory.Hotbar[slot] then
+				inventory.Hotbar[slot] = newItem
+				return true
+			end
+		end
+	end
+
+	local emptySlot = findFirstEmptyBackpackSlot(inventory)
+	if emptySlot then
+		bpSet(inventory.Backpack, emptySlot, newItem)
+		return true
+	end
+	return false
+end
+
 local function removeHammerFromInventory(inventory)
 	for slot = 1, HOTBAR_SIZE do
 		if inventory.Hotbar[slot] and inventory.Hotbar[slot].itemName == "Hammer" then
@@ -324,7 +380,8 @@ end
 
 --|| Public Functions ||--
 
-function InventoryService:AddItem(player: Player, itemName: string, quantity: number, suppressNotification: boolean?): boolean
+-- durability: only for tools with maxDurability (defaults to full); used to give back a worn tool
+function InventoryService:AddItem(player: Player, itemName: string, quantity: number, suppressNotification: boolean?, durability: number?): boolean
 	local inventory = getInventory(player)
 	if not inventory then return false end
 
@@ -336,6 +393,30 @@ function InventoryService:AddItem(player: Player, itemName: string, quantity: nu
 
 	local category = ItemCategorization.getItemCategory(itemConfig)
 	local targetHotbar = category == "hotbar" and inventory.Hotbar or nil
+
+	-- Tools with durability never share a slot: one item per tool, each with its own durability
+	if itemConfig.maxDurability then
+		local useHotbar = targetHotbar ~= nil
+		if countFreeSlots(inventory, useHotbar) < quantity then
+			warn("Inventory full, cannot add item:", itemName)
+			return false
+		end
+
+		for _ = 1, quantity do
+			insertIntoFreeSlot(inventory, {
+				id = generateItemId(player),
+				itemName = itemName,
+				quantity = 1,
+				durability = durability or itemConfig.maxDurability,
+			}, useHotbar)
+		end
+
+		fireInventoryUpdate(self, player, inventory)
+		if not suppressNotification then
+			self.Client.ItemGained:Fire(player, itemName, quantity)
+		end
+		return true
+	end
 
 	-- If stackable, try to find existing stack
 	if itemConfig.stackable then
@@ -734,6 +815,40 @@ function InventoryService:EquipItem(player: Player, slot: number): boolean
 	return true
 end
 
+-- Uses up one durability point of the equipped tool and destroys it at 0.
+-- Hammer (slot 0) and tools without maxDurability are unbreakable.
+function InventoryService:WearEquippedTool(player: Player)
+	local inventory = getInventory(player)
+	if not inventory then return end
+
+	local slot = inventory.EquippedSlot
+	if slot == nil or slot == 0 then return end
+
+	local item = inventory.Hotbar[slot]
+	if not item then return end
+
+	local itemConfig = ItemData.GetItem(item.itemName)
+	if not itemConfig or not itemConfig.maxDurability then return end
+
+	item.durability = (item.durability or itemConfig.maxDurability) - 1
+	if item.durability > 0 then
+		fireInventoryUpdate(self, player, inventory)
+		return
+	end
+
+	if item.quantity > 1 then
+		-- Old saves can hold several tools in one slot: break one, the next starts fresh
+		item.quantity = item.quantity - 1
+		item.durability = itemConfig.maxDurability
+	else
+		self:UnequipItem(player)
+		inventory.Hotbar[slot] = nil
+	end
+
+	self.Client.ToolBroken:Fire(player, item.itemName)
+	fireInventoryUpdate(self, player, inventory)
+end
+
 function InventoryService:UnequipItem(player: Player): boolean
 	local inventory = getInventory(player)
 	if not inventory or inventory.EquippedSlot == nil then
@@ -912,6 +1027,7 @@ local RunService = game:GetService("RunService")
 
 local DEV_USER_IDS = {
 	[4882453838] = true, -- Yokhaii
+	[9741741191] = true, -- Crash
 }
 
 function InventoryService.Client:AddItem(player: Player, itemName: string, quantity: number)
@@ -970,6 +1086,8 @@ function InventoryService:KnitStart()
 
 		-- Remove any leftover Hammer from inventory data
 		removeHammerFromInventory(inventory)
+
+		ensureToolDurability(inventory)
 
 		-- Clean up invalid items
 		local removedCount = cleanupInvalidItems(inventory)
