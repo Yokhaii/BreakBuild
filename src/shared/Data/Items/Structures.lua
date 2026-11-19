@@ -58,6 +58,20 @@ local Structures = {
 		blueprintType = "BirdNest",
 		placementModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.BirdNest",
 	},
+
+	CompletedCropField = {
+		name = "CompletedCropField",
+		displayName = "Crop Field",
+		type = "Structure",
+		stackable = false,
+		maxStack = 1,
+		dropable = true,
+		description = "A completed crop field. Plant seeds on it and harvest the crops.",
+		modelPath = "Assets.Items.CompletedCropField",
+		isStructure = true,
+		blueprintType = "CropField",
+		placementModelPath = "ReplicatedStorage.Assets.CompletedBlueprints.CropField",
+	},
 }
 
 return Structures

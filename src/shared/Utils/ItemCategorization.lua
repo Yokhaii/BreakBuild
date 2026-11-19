@@ -10,7 +10,7 @@ function ItemCategorization.getItemCategory(itemConfig)
 		return "backpack"
 	end
 
-	if itemConfig.type == "Ore" then
+	if itemConfig.type == "Ore" or itemConfig.type == "Crop" then
 		return "backpack"
 	end
 

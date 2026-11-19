@@ -56,6 +56,8 @@ SHARED:
   src/shared/Data/Items/Tools.lua      -- Tool items
   src/shared/Data/Items/Blueprints.lua -- Blueprint items
   src/shared/Data/Items/Structures.lua -- Completed structure items
+  src/shared/Data/Items/Seeds.lua      -- Seed items (planted on the CropField)
+  src/shared/Data/Items/Crops.lua      -- Crop items (harvested from the CropField)
   src/shared/Utils/ItemCategorization.lua -- Hotbar vs backpack routing
 
 ================================================================================
@@ -150,6 +152,12 @@ TOOLS (Combat):
 
 TOOLS (Special):
   Hammer (slot 0, removal tool, non-droppable)
+
+SEEDS (type "Seed", hotbar, see CropData):
+  WheatSeeds | CarrotSeeds | MelonSeeds
+
+CROPS (type "Crop", backpack like ores):
+  Wheat | Carrot | Melon
 
 BLUEPRINTS:
   WorkbenchBlueprint | FurnaceBlueprint | StoneCutterBlueprint
@@ -415,8 +423,9 @@ InventoryService runs these on each player join:
   1. migrateToUnifiedHotbar() -- old dual-hotbar → single hotbar
   2. migrateBackpack() -- numeric keys → string keys
   3. removeHammerFromInventory() -- clear stray Hammer items
-  4. cleanupInvalidItems() -- remove items whose name no longer exists
-  5. ensureStarterPickaxe() -- add WoodenPickaxe if not present
+  4. renameLegacyItems() -- RENAMED_ITEMS (Seed -> WheatSeeds) in inventory, chest, passive loot
+  5. cleanupInvalidItems() -- remove items whose name no longer exists
+  6. ensureStarterPickaxe() -- add WoodenPickaxe if not present
 
 ================================================================================
 16. ADDING A NEW ITEM

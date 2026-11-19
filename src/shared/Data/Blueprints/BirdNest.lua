@@ -43,7 +43,9 @@ local BirdNest = {
 		maxStored = 10, -- trips waiting in the nest before the bird stops
 		-- One entry is rolled per trip (weights are relative). min/max = quantity range (default 1)
 		loot = {
-			{ itemName = "Seed", weight = 70, min = 1, max = 3 },
+			{ itemName = "WheatSeeds", weight = 35, min = 1, max = 3 },
+			{ itemName = "CarrotSeeds", weight = 23, min = 1, max = 2 },
+			{ itemName = "MelonSeeds", weight = 12 },
 			{ itemName = "StoneShard", weight = 12 },
 			{ itemName = "IronOre", weight = 10 },
 			{ itemName = "Coal", weight = 5 },

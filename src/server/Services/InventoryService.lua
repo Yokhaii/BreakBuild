@@ -154,6 +154,39 @@ local function migrateToUnifiedHotbar(inventory)
 	return true
 end
 
+-- Items that were renamed: saved stacks are converted instead of being cleaned up as invalid
+local RENAMED_ITEMS = {
+	Seed = "WheatSeeds",
+}
+
+local function renameLegacyItems(playerData)
+	local function rename(item)
+		if item and RENAMED_ITEMS[item.itemName] then
+			item.itemName = RENAMED_ITEMS[item.itemName]
+		end
+	end
+
+	local inventory = playerData.Inventory
+	for slot = 1, HOTBAR_SIZE do
+		rename(inventory.Hotbar[slot])
+	end
+	for slot = 1, BACKPACK_SIZE do
+		rename(bpGet(inventory.Backpack, slot))
+	end
+
+	if playerData.Chest and playerData.Chest.Items then
+		for _, item in ipairs(playerData.Chest.Items) do
+			rename(item)
+		end
+	end
+
+	for _, storage in pairs(playerData.PassiveBlueprints or {}) do
+		for _, loot in ipairs(storage.Stored or {}) do
+			rename(loot)
+		end
+	end
+end
+
 local function cleanupInvalidItems(inventory)
 	local removedCount = 0
 
@@ -1088,6 +1121,8 @@ function InventoryService:KnitStart()
 		removeHammerFromInventory(inventory)
 
 		ensureToolDurability(inventory)
+
+		renameLegacyItems(DataService:GetData(player))
 
 		-- Clean up invalid items
 		local removedCount = cleanupInvalidItems(inventory)

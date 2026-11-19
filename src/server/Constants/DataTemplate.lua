@@ -114,6 +114,11 @@ return {
 	-- each placed blueprint (PlacedBlueprints[i].passiveLastRollAt).
 	PassiveBlueprints = {},
 
+	-- Crop fields: what grows on each plot, keyed by blueprintType (see CropFieldService).
+	-- [blueprintType] = { Plots = { [plotIndex as string] = { seed, plantedAt } } }
+	-- Persisted across placements, like the Chest: crops keep growing while picked up.
+	CropFields = {},
+
 	-- Tree System
 	Tree = {
 		-- Currently selected tree type

@@ -496,6 +496,28 @@ local function clearBlueprintPreviewHighlight()
 	hoveredPreviewType = nil
 end
 
+-- What the hover highlight outlines on a completed structure. A blueprint class can narrow it
+-- with GetHoverHighlightAdornee(screenPosition): an Instance (e.g. the CropField plot under the
+-- cursor), false for no highlight, or nil for the whole structure
+local function getStructureHighlightAdornee(target: Instance)
+	local blueprintId = target:FindFirstChild("BlueprintId")
+	local blueprint = blueprintId and BlueprintPlacementController
+		and BlueprintPlacementController:GetActiveBlueprint(blueprintId.Value)
+	if blueprint and blueprint.GetHoverHighlightAdornee then
+		local adornee = blueprint:GetHoverHighlightAdornee(Vector2.new(mouse.X, mouse.Y))
+		if adornee ~= nil then
+			return adornee
+		end
+	end
+	return target
+end
+
+local function applyStructureHighlight(highlight: Highlight, target: Instance)
+	local adornee = getStructureHighlightAdornee(target)
+	highlight.Enabled = adornee ~= false
+	highlight.Adornee = adornee or target
+end
+
 -- Update blueprint preview highlight (for Build mode, not removal mode)
 -- Reuses detectRemovableUnderCursor but only shows highlight for blueprints and structures (no red fill)
 local function updateBlueprintPreviewMode()
@@ -509,8 +531,11 @@ local function updateBlueprintPreviewMode()
 		end
 	end
 
-	-- If same target, no change needed
+	-- Same target: only the highlighted part of a structure can change
 	if target == hoveredPreviewBlueprint then
+		if target and targetType == "structure" and blueprintPreviewHighlight then
+			applyStructureHighlight(blueprintPreviewHighlight, target)
+		end
 		return
 	end
 
@@ -535,6 +560,9 @@ local function updateBlueprintPreviewMode()
 	highlight.OutlineTransparency = 0.7
 	highlight.OutlineColor = Color3.new(0, 0, 0) -- Black outline
 	highlight.Adornee = highlightTarget
+	if targetType == "structure" then
+		applyStructureHighlight(highlight, target)
+	end
 	highlight.Parent = target
 
 	blueprintPreviewHighlight = highlight
@@ -1094,7 +1122,7 @@ local function onMouseClick()
 		if blueprintId and blueprintId.Value and BlueprintPlacementController then
 			local blueprint = BlueprintPlacementController:GetActiveBlueprint(blueprintId.Value)
 			if blueprint and blueprint._OnInteract then
-				blueprint:_OnInteract(player)
+				blueprint:_OnInteract(player, Vector2.new(mouse.X, mouse.Y))
 			end
 		end
 		return
@@ -1195,7 +1223,7 @@ local function onInputBegan(input, gameProcessed)
 				if blueprintId and blueprintId.Value and BlueprintPlacementController then
 					local blueprint = BlueprintPlacementController:GetActiveBlueprint(blueprintId.Value)
 					if blueprint and blueprint._OnInteract then
-						blueprint:_OnInteract(player)
+						blueprint:_OnInteract(player, Vector2.new(screenX, screenY))
 					end
 				end
 				return
@@ -1248,7 +1276,7 @@ local function onInputBegan(input, gameProcessed)
 				if blueprintId and blueprintId.Value and BlueprintPlacementController then
 					local blueprint = BlueprintPlacementController:GetActiveBlueprint(blueprintId.Value)
 					if blueprint and blueprint._OnInteract then
-						blueprint:_OnInteract(player)
+						blueprint:_OnInteract(player, Vector2.new(screenX, screenY))
 					end
 				end
 			end

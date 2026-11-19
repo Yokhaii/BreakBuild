@@ -54,6 +54,19 @@ local Blueprints = {
 		isBlueprintTool = true,
 		blueprintType = "BirdNest",
 	},
+
+	CropFieldBlueprint = {
+		name = "CropFieldBlueprint",
+		displayName = "Crop Field Blueprint",
+		type = "Blueprint",
+		stackable = false,
+		maxStack = 1,
+		dropable = true,
+		description = "A blueprint for building a Crop Field",
+		modelPath = "Assets.Items.Blueprint",
+		isBlueprintTool = true,
+		blueprintType = "CropField",
+	},
 }
 
 return Blueprints
