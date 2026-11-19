@@ -1,5 +1,7 @@
 return {
-	WorkbenchBlueprint = "70746456628445",
-	FurnaceBlueprint = "70746456628445",
-	CropFieldBlueprint = "70746456628445",
+	WorkbenchBlueprint = "138694101145915",
+	FurnaceBlueprint = "138694101145915",
+	ChestBlueprint = "138694101145915",
+	BirdNestBlueprint = "138694101145915",
+	CropFieldBlueprint = "138694101145915",
 }
