@@ -10,4 +10,11 @@ UIActions.setCurrentFrame = Rodux.makeActionCreator("setCurrentFrame", function(
 	}
 end)
 
+-- Set whether the camera is in first person (for the view toggle button)
+UIActions.setFirstPerson = Rodux.makeActionCreator("setFirstPerson", function(isFirstPerson)
+	return {
+		isFirstPerson = isFirstPerson,
+	}
+end)
+
 return UIActions

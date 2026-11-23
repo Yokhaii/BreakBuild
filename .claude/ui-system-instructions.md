@@ -124,6 +124,7 @@ ScreenGui (IgnoreGuiInset, ZIndexBehavior = Global)
     │   ├── HammerSlot
     │   ├── CycleTimer (day/night)
     │   ├── SpawnButton
+    │   ├── ViewButton (first person / normal view toggle, see CameraController)
     │   └── ObjectivesTracker (main + pinned objectives, see objective doc)
     │
     ├── Objectives (full objective list, CurrentFrame == "Objectives")
@@ -151,6 +152,7 @@ Complete state tree:
   {
     UIReducer = {
       CurrentFrame = "HUD",           -- "HUD" | "None" | station names
+      IsFirstPerson = false,          -- set by CameraController
     },
 
     InventoryReducer = {
@@ -279,6 +281,17 @@ ACTIVE KEYBINDS:
   Backquote/B: Toggle backpack
   H: Toggle hammer equip (condition: in BuildingArea)
   G: Drop one of the equipped item
+  V: Toggle first person / normal view (CameraController)
+
+CAMERA (src/client/Controllers/CameraController.lua):
+  - ToggleFirstPerson() / SetFirstPerson(bool): snaps the default camera's
+    zoom to min (first person) or THIRD_PERSON_ZOOM. No LockFirstPerson, so
+    players can still scroll / pinch out of first person natively
+  - Dispatches UIActions.setFirstPerson when the camera enters/leaves first
+    person (also from scroll / pinch zoom)
+  - While a menu is open (BackpackOpen, DropPrompt, or CurrentFrame other than
+    "HUD"/"None") it frees the mouse each frame after the camera locks it.
+    New menus that use CurrentFrame get this for free.
 
 ================================================================================
 10. CRAFTING UI FLOW
