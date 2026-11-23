@@ -278,7 +278,7 @@ ACTIVE KEYBINDS:
   1-7: Toggle equip hotbar slots (condition: backpack closed)
   Backquote/B: Toggle backpack
   H: Toggle hammer equip (condition: in BuildingArea)
-  G: Drop equipped item
+  G: Drop one of the equipped item
 
 ================================================================================
 10. CRAFTING UI FLOW
@@ -332,6 +332,18 @@ DRAG FLOW:
   5. Dispatch swapGridSlots(fromIndex, toIndex)
   6. Optimistic Rodux update (instant UI swap)
   7. Server operation async in background
+
+HUD HOTBAR (backpack closed):
+  Mouse down = BeginHotbarPress; it becomes a drag after DRAG_START_DISTANCE
+  pixels, otherwise the click equips (ShouldIgnoreSlotClick skips the click
+  that ends a drag). HUD slots are drop zones 22-28 only while the backpack
+  is closed.
+
+DROPPING IN THE WORLD:
+  RegisterDragSurface(id, guiObject) → unregisterFn marks inventory UI
+  (HUD "hud_hotbar" card, backpack "backpack" InventoryFrame + its panels).
+  A drag released on no drop zone and outside every surface drops the stack:
+  all of it on mouse, DropAmountPrompt on touch (see inventory doc).
 
 ================================================================================
 12. SYNCHRONIZATION PATTERN

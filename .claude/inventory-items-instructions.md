@@ -16,7 +16,7 @@ The inventory system manages:
 - Storage (7 hotbar slots + 21 backpack slots = 28 total)
 - Stacking (stackable items combine, tools don't stack)
 - Equipping (hold items in hand with welded models)
-- Dropping (spawn item in world for pickup)
+- Dropping (toss items in the world, anyone walking over them picks them up)
 - Persistence (ProfileService saves/loads)
 - Client sync (server → Rodux via signals)
 
@@ -27,9 +27,12 @@ The inventory system manages:
 SERVER:
   src/server/Services/InventoryService.lua
     - AddItem, RemoveItem, MoveHotbarSlot, MoveToHotbar, MoveToBackpack
-    - EquipItem, UnequipItem, DropEquippedItem
+    - EquipItem, UnequipItem, DropEquippedItem, DropItem, CanAddItem
     - Serialization and sync to client
     - Migrations and cleanup on load
+
+  src/server/Services/DroppedItemService.lua
+    - Dropped items in the world: toss, landing, pickup, despawn
 
   src/server/Services/DataService.lua
     - ProfileService integration
@@ -49,6 +52,12 @@ CLIENT:
     - Converts server signals to Rodux dispatches
     - String-key to numeric-key conversion
 
+  src/client/Controllers/DroppedItemController.lua
+    - Animates dropped items: toss arc, then hover (bob) + spin
+
+  src/client/Roact/Components/Global/DropAmountPrompt/
+    - "Drop how many?" panel (touch), state in DropPromptReducer
+
 SHARED:
   src/shared/Data/Items/init.lua       -- Central registry
   src/shared/Data/Items/Blocks.lua     -- Block items
@@ -59,6 +68,7 @@ SHARED:
   src/shared/Data/Items/Seeds.lua      -- Seed items (planted on the CropField)
   src/shared/Data/Items/Crops.lua      -- Crop items (harvested from the CropField)
   src/shared/Utils/ItemCategorization.lua -- Hotbar vs backpack routing
+  src/shared/Config/DroppedItemConfig.lua -- Drop/pickup/hover tuning
 
 ================================================================================
 3. ITEM DEFINITION FORMAT
@@ -71,7 +81,8 @@ BASE PROPERTIES (all items):
     type = "Block",                 -- Category: Block/Ore/Tool/Blueprint/Structure
     stackable = true,               -- Can items combine in one slot
     maxStack = 64,                  -- Max quantity per stack
-    dropable = true,                -- Can be dropped when equipped
+    dropable = true,                -- Can be dropped (false: Hammer, Bedrock, ore blocks,
+                                    --  Blueprints, Structures)
     description = "...",            -- Tooltip text
     modelPath = "Assets.Items.X",   -- Dot-path to model in ReplicatedStorage
   }
@@ -294,19 +305,36 @@ UNEQUIP (InventoryService:UnequipItem):
   3. Set EquippedSlot = nil
   4. Fire ItemUnequipped signal
 
-DROP (InventoryService:DropEquippedItem):
-  1. Get equipped item from Hotbar[slot]
-  2. Validate item.dropable == true (Hammer cannot be dropped)
-  3. Create dropped model at player position + lookVector * 5
-  4. Remove from inventory
-  5. Unequip
-  6. Fire ItemDropped signal
+DROP:
+  InventoryService:DropItem(player, itemId, quantity)
+    1. Find the stack (hotbar or backpack), check itemConfig.dropable
+    2. DroppedItemService:DropItem tosses `quantity` (with tool durability) in
+       front of the player; returns false when there is no ground (nothing removed)
+    3. RemoveItem(itemId, quantity) (unequips if the equipped stack is emptied)
+    4. Fire ItemDropped. The client version resyncs the inventory on failure
+       (the client removes the stack optimistically)
+  InventoryService:DropEquippedItem(player) -- G key: DropItem(equipped, 1)
 
-DROPPED ITEM IN WORLD:
-  Model named "{itemName}_Dropped" with:
-    IntValue "Quantity"
-    StringValue "ItemName"
-  Can be picked up by any player
+  CLIENT WAYS TO DROP:
+    - G: one of the equipped item
+    - Drag a slot out of the inventory UI (HUD hotbar card, or the backpack
+      InventoryFrame onto the dark background): the whole stack on mouse;
+      on touch with quantity > 1, the DropAmountPrompt asks how many
+    - Not dropable: "This item can't be dropped" text notification
+
+DROPPED ITEM IN WORLD (DroppedItemService, DroppedItemConfig):
+  Model "{itemName}_Dropped" in Workspace.DroppedItems, tagged "DroppedItem".
+  Same model as the held one (hand size), authored orientation, all parts
+  anchored + CanCollide/CanQuery/CanTouch false. The server places it at its
+  landing spot at once (ground raycast, + HoverHeight); attributes
+  ItemName, Quantity, StartCenter, LandCenter, DroppedAt (server time),
+  FallTime let DroppedItemController animate the toss arc, then the bob/spin.
+  Stacks of more than 1 get a client "x12" BillboardGui once landed, adorned
+  to an invisible part at the item's center (Height attribute = item height).
+  Pickup (server, every 0.1s): any player within PickupRadius once landed
+  (DroppedAt + FallTime), the dropper only after OwnerPickupDelay (2s),
+  only if InventoryService:CanAddItem. Despawns after DespawnTime (5 min).
+  Dropped items are not saved.
 
 ================================================================================
 10. KEYBINDS (InventoryController)
@@ -315,7 +343,8 @@ DROPPED ITEM IN WORLD:
   1-7: Toggle equip hotbar slot (only when backpack closed)
   Backquote (`) or B: Toggle backpack open/close
   H: Equip/unequip Hammer (only in BuildingArea)
-  G: Drop equipped item
+  G: Drop one of the equipped item
+  HUD hotbar: click = equip, drag onto a slot = swap, drag out = drop stack
 
 ================================================================================
 11. DATA PERSISTENCE
@@ -421,6 +450,8 @@ Rodux Actions:
 
 InventoryService runs these on each player join:
   1. migrateToUnifiedHotbar() -- old dual-hotbar → single hotbar
+     migrateHotbarKeys() -- a hotbar saved with slot 1 empty comes back as
+       string keys ("3"): converted back to numeric slots
   2. migrateBackpack() -- numeric keys → string keys
   3. removeHammerFromInventory() -- clear stray Hammer items
   4. renameLegacyItems() -- RENAMED_ITEMS (Seed -> WheatSeeds) in inventory, chest, passive loot

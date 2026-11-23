@@ -1,4 +1,7 @@
 return {
+	-- Grid index of HUD slot N is BackpackSlotCount + N (same indices as the backpack's hotbar row)
+	BackpackSlotCount = 21,
+
 	-- Slot size (square due to aspect ratio constraint, scale-based for responsiveness)
 	SlotSize = UDim2.fromScale(0.13, 0.85),
 

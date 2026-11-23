@@ -11,6 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local StarterPlayer = game:GetService("StarterPlayer")
+local GuiService = game:GetService("GuiService")
 
 -- Knit packages
 local Packages = ReplicatedStorage.Packages
@@ -25,6 +26,7 @@ local Store = require(StarterPlayer.StarterPlayerScripts.Client.Rodux.Store)
 local Actions = StarterPlayer.StarterPlayerScripts.Client.Rodux.Actions
 local InventoryActions = require(Actions.InventoryActions)
 local UIActions = require(Actions.UIActions)
+local DropPromptActions = require(Actions.DropPromptActions)
 
 -- Data
 local ItemData = require(ReplicatedStorage.Shared.Data.Items)
@@ -48,6 +50,8 @@ local HAMMER_KEY = Enum.KeyCode.H
 local HOTBAR_SIZE = 7
 local BACKPACK_SIZE = 21
 local DRAG_CLONE_SIZE = UDim2.fromOffset(66, 68)
+local DRAG_START_DISTANCE = 10 -- Pixels the pointer moves on a HUD hotbar slot before it becomes a drag
+local SLOT_CLICK_GUARD = 0.15 -- Seconds after a drag during which a hotbar click is ignored
 local HOTBAR_KEYCODES = {
 	Enum.KeyCode.One,
 	Enum.KeyCode.Two,
@@ -72,6 +76,14 @@ local dragState = {
 
 -- Generic drop zone registry: key = unique id, value = { gridIndex, absPosition, absSize }
 local dropZones = {}
+
+-- Inventory UI areas (backpack frame, HUD hotbar): releasing a drag outside all of them drops the item
+local dragSurfaces = {}
+
+-- Press on a HUD hotbar slot that becomes a drag once the pointer moves: { slot, item, startPosition }
+local pendingHotbarPress = nil
+local lastDragEndedAt = 0
+local nextDropPromptId = 0
 
 --|| Private Functions ||--
 
@@ -118,6 +130,92 @@ local function findDropZoneAtPosition(mouseX, mouseY)
 	return nil
 end
 
+local function isRendered(object: GuiObject, root: GuiObject): boolean
+	local current = object
+	while current and current ~= root.Parent do
+		if current:IsA("GuiObject") and not current.Visible then
+			return false
+		end
+		current = current.Parent
+	end
+	return true
+end
+
+local function isOverDragSurface(mouseX, mouseY): boolean
+	local adjustedY = mouseY - GuiService:GetGuiInset().Y
+
+	local function contains(object)
+		local pos = object.AbsolutePosition
+		local size = object.AbsoluteSize
+		return mouseX >= pos.X and mouseX <= pos.X + size.X
+			and adjustedY >= pos.Y and adjustedY <= pos.Y + size.Y
+	end
+
+	for _, surface in pairs(dragSurfaces) do
+		if surface.Parent and isRendered(surface, surface) and contains(surface) then
+			return true
+		end
+		if surface.Parent then
+			for _, descendant in ipairs(surface:GetDescendants()) do
+				if descendant:IsA("GuiObject") and contains(descendant) and isRendered(descendant, surface) then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+local function getGridItem(gridIndex: number)
+	local state = getInventoryState()
+	if gridIndex <= BACKPACK_SIZE then
+		return state.Backpack[gridIndex]
+	end
+	return state.Hotbar[gridIndex - BACKPACK_SIZE]
+end
+
+local function showNotDropable()
+	local TextNotificationController = Knit.GetController("TextNotificationController")
+	if TextNotificationController then
+		TextNotificationController:Show("This item can't be dropped")
+	end
+end
+
+-- Optimistic update, then the server tosses the items in front of the player
+local function dropFromGrid(gridIndex: number, item, quantity: number)
+	if quantity >= item.quantity then
+		Store:dispatch(InventoryActions.removeGridSlot(gridIndex))
+	else
+		local remaining = table.clone(item)
+		remaining.quantity = item.quantity - quantity
+		Store:dispatch(InventoryActions.restoreGridSlot(gridIndex, remaining))
+	end
+
+	InventoryService:DropItem(item.id, quantity)
+end
+
+-- Stack released outside the inventory UI: drop all of it, or ask how many on touch
+local function requestDrop(gridIndex: number, item, askQuantity: boolean)
+	local itemConfig = ItemData.GetItem(item.itemName)
+	if not itemConfig or not itemConfig.dropable then
+		showNotDropable()
+		return
+	end
+
+	if askQuantity and item.quantity > 1 then
+		nextDropPromptId += 1
+		Store:dispatch(DropPromptActions.setDropPrompt({
+			id = nextDropPromptId,
+			itemId = item.id,
+			itemName = item.itemName,
+			gridIndex = gridIndex,
+			maxQuantity = item.quantity,
+		}))
+	else
+		dropFromGrid(gridIndex, item, item.quantity)
+	end
+end
+
 local function cancelDrag()
 	if not dragState.isDragging then return end
 
@@ -130,9 +228,10 @@ local function cancelDrag()
 	dragState.sourceGridIndex = nil
 	dragState.item = nil
 	dragState.onDrop = nil
+	lastDragEndedAt = os.clock()
 end
 
-local function endDrag()
+local function endDrag(inputType: Enum.UserInputType?)
 	if not dragState.isDragging then return end
 
 	local mousePos = UserInputService:GetMouseLocation()
@@ -143,6 +242,9 @@ local function endDrag()
 		-- Source has a custom handler (e.g. drag from chest slot).
 		-- Pass the target zone so the handler can decide what to do.
 		dragState.onDrop(targetZone)
+	elseif not targetZone and dragState.sourceGridIndex and not isOverDragSurface(mousePos.X, mousePos.Y) then
+		-- Released outside the inventory UI: drop the stack in the world
+		requestDrop(dragState.sourceGridIndex, dragState.item, inputType == Enum.UserInputType.Touch)
 	elseif targetZone and targetZone.onDrop then
 		-- Target has a custom drop handler (e.g. chest deposit).
 		local item = dragState.item
@@ -194,6 +296,49 @@ local function endDrag()
 	dragState.sourceGridIndex = nil
 	dragState.item = nil
 	dragState.onDrop = nil
+	lastDragEndedAt = os.clock()
+end
+
+local function startDrag(gridIndex: number, item)
+	dragState.isDragging = true
+	dragState.sourceGridIndex = gridIndex
+	dragState.item = item
+
+	local clone = createDragClone(item)
+
+	local screenGui = playerGui:FindFirstChild("GameScreenGui")
+	if screenGui then
+		clone.Parent = screenGui
+	else
+		for _, gui in ipairs(playerGui:GetChildren()) do
+			if gui:IsA("ScreenGui") then
+				clone.Parent = gui
+				break
+			end
+		end
+	end
+
+	dragState.dragClone = clone
+	updateDragPosition()
+end
+
+-- A HUD hotbar press becomes a drag once the pointer has moved far enough
+local function updatePendingPress()
+	local press = pendingHotbarPress
+	if not press then return end
+
+	local mousePos = UserInputService:GetMouseLocation()
+	if not press.startPosition then
+		-- Sampled a frame after the press so touch positions are up to date
+		press.startPosition = mousePos
+		return
+	end
+
+	if (mousePos - press.startPosition).Magnitude < DRAG_START_DISTANCE then return end
+
+	pendingHotbarPress = nil
+	if dragState.isDragging or getInventoryState().BackpackOpen then return end
+	startDrag(BACKPACK_SIZE + press.slot, press.item)
 end
 
 local function toggleBackpack()
@@ -299,9 +444,17 @@ local function onInputBegan(input, gameProcessed)
 	-- Block equip/drop when inventory overlay is open
 	if state.BackpackOpen then return end
 
-	-- Drop equipped item
+	-- Drop one of the equipped item
 	if input.KeyCode == DROP_KEY then
-		InventoryService:DropEquippedItem()
+		local equippedItem = state.EquippedSlot and state.Hotbar[state.EquippedSlot]
+		if equippedItem then
+			local itemConfig = ItemData.GetItem(equippedItem.itemName)
+			if itemConfig and itemConfig.dropable then
+				InventoryService:DropEquippedItem()
+			else
+				showNotDropable()
+			end
+		end
 	end
 
 	-- Hammer key
@@ -316,8 +469,9 @@ end
 local function onInputEnded(input, gameProcessed)
 	if input.UserInputType == Enum.UserInputType.MouseButton1
 		or input.UserInputType == Enum.UserInputType.Touch then
+		pendingHotbarPress = nil
 		if dragState.isDragging then
-			endDrag()
+			endDrag(input.UserInputType)
 		end
 	end
 end
@@ -365,26 +519,45 @@ function InventoryController:StartDrag(gridIndex: number, item)
 	if dragState.isDragging then return end
 	if not getInventoryState().BackpackOpen then return end
 
-	dragState.isDragging = true
-	dragState.sourceGridIndex = gridIndex
-	dragState.item = item
+	startDrag(gridIndex, item)
+end
 
-	local clone = createDragClone(item)
+-- Mouse/touch down on a HUD hotbar slot (backpack closed): a click equips, a drag moves or drops
+function InventoryController:BeginHotbarPress(slot: number, item)
+	if dragState.isDragging or getInventoryState().BackpackOpen then return end
+	pendingHotbarPress = { slot = slot, item = item, startPosition = nil }
+end
 
-	local screenGui = playerGui:FindFirstChild("GameScreenGui")
-	if screenGui then
-		clone.Parent = screenGui
-	else
-		for _, gui in ipairs(playerGui:GetChildren()) do
-			if gui:IsA("ScreenGui") then
-				clone.Parent = gui
-				break
-			end
+-- True while (or right after) a drag, so releasing it on a hotbar slot doesn't toggle equip
+function InventoryController:ShouldIgnoreSlotClick(): boolean
+	return dragState.isDragging or os.clock() - lastDragEndedAt < SLOT_CLICK_GUARD
+end
+
+-- Inventory UI area: releasing a dragged stack outside every surface drops it in the world
+function InventoryController:RegisterDragSurface(id: string, guiObject: GuiObject)
+	dragSurfaces[id] = guiObject
+
+	return function()
+		if dragSurfaces[id] == guiObject then
+			dragSurfaces[id] = nil
 		end
 	end
+end
 
-	dragState.dragClone = clone
-	updateDragPosition()
+-- Drop prompt (touch): drop `quantity` of the prompted stack
+function InventoryController:ConfirmDropPrompt(quantity: number)
+	local prompt = Store:getState().DropPromptReducer.Prompt
+	Store:dispatch(DropPromptActions.setDropPrompt(nil))
+	if not prompt then return end
+
+	local item = getGridItem(prompt.gridIndex)
+	if not item or item.id ~= prompt.itemId then return end
+
+	dropFromGrid(prompt.gridIndex, item, math.clamp(math.floor(quantity), 1, item.quantity))
+end
+
+function InventoryController:CancelDropPrompt()
+	Store:dispatch(DropPromptActions.setDropPrompt(nil))
 end
 
 -- onDrop: optional function(item, fromGridIndex) called instead of the default swap/trash logic.
@@ -500,7 +673,10 @@ function InventoryController:KnitStart()
 		UserInputService.InputEnded:Connect(onInputEnded)
 	end)
 
-	RunService.RenderStepped:Connect(updateDragPosition)
+	RunService.RenderStepped:Connect(function()
+		updatePendingPress()
+		updateDragPosition()
+	end)
 end
 
 return InventoryController

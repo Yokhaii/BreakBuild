@@ -9,6 +9,7 @@ local StarterPlayer = game:GetService("StarterPlayer")
 
 local Roact = require(ReplicatedStorage.Packages.Roact)
 local RoactHooks = require(ReplicatedStorage.Packages.Hooks)
+local Knit = require(ReplicatedStorage.Packages.Knit)
 
 local Components = StarterPlayer.StarterPlayerScripts.Client.Roact.Components
 local StudBackground = require(Components.Global.StudBackground)
@@ -25,7 +26,26 @@ local function HotbarSlot(props, hooks)
 	local item = props.item
 	local isEquipped = props.isEquipped or false
 	local onSlotClick = props.onSlotClick
+	local onPressStart = props.onPressStart
+	local isDropZone = props.isDropZone or false
 	local baseZIndex = props.ZIndex or 1
+
+	local dropZoneRef = hooks.useValue(Roact.createRef())
+
+	-- Drop zone (grid index 22-28) so items can be dragged between HUD slots
+	hooks.useEffect(function()
+		local dropZone = dropZoneRef.value:getValue()
+		if not isDropZone or not dropZone then return end
+
+		local InventoryController = Knit.GetController("InventoryController")
+		if not InventoryController then return end
+
+		return InventoryController:RegisterDropZone(
+			"hud_hotbar_slot_" .. slotNumber,
+			Config.BackpackSlotCount + slotNumber,
+			dropZone
+		)
+	end, { slotNumber, isDropZone })
 
 	local isEmpty = item == nil
 	local displayAmount = ""
@@ -67,12 +87,23 @@ local function HotbarSlot(props, hooks)
 		ZIndex = baseZIndex,
 		ClipsDescendants = true,
 		[Roact.Ref] = TutorialTargets.Ref("HotbarSlot_" .. slotNumber),
+		[Roact.Event.MouseButton1Down] = function()
+			if item and onPressStart then
+				onPressStart(slotNumber, item)
+			end
+		end,
 		[Roact.Event.MouseButton1Click] = function()
 			if onSlotClick then
 				onSlotClick(slotNumber)
 			end
 		end,
 	}, {
+		DropZone = Roact.createElement("Frame", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			[Roact.Ref] = dropZoneRef.value,
+		}),
+
 		UICorner = Roact.createElement("UICorner", {
 			CornerRadius = Config.ImageCornerRadius,
 		}),

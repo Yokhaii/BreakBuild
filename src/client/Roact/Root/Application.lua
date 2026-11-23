@@ -24,6 +24,7 @@ local Notifications = require(Applications.HUD.Components.Notifications)
 local BiomeTransition = require(Applications.BiomeTransition)
 local TutorialApplication = require(Applications.Tutorial)
 local ObjectivesApplication = require(Applications.Objectives)
+local DropAmountPrompt = require(StarterPlayer.StarterPlayerScripts.Client.Roact.Components.Global.DropAmountPrompt)
 
 local function Root(props, hooks)
 	return Roact.createElement(ContextStack, {
@@ -46,6 +47,7 @@ local function GameFrame()
 			Blueprint = Roact.createElement(BlueprintApplication),
 			Backpack = Roact.createElement(BackpackApplication),
 			Objectives = Roact.createElement(ObjectivesApplication),
+			DropAmountPrompt = Roact.createElement(DropAmountPrompt),
 		}),
 		TutorialScreenGui = Roact.createElement("ScreenGui", {
 			IgnoreGuiInset = true,

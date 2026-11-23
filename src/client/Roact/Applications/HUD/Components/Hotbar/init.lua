@@ -1,7 +1,7 @@
 --[=[
 	Hotbar Component
 	Displays inventory slots at the bottom of the screen
-	Click-to-equip only (no drag from HUD hotbar)
+	Click a slot to equip it; drag it onto another slot to swap, or out of the hotbar to drop the stack
 ]=]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -30,11 +30,32 @@ local function Hotbar(props, hooks)
 	local equippedSlot = inventoryState.EquippedSlot
 	local hotbar = inventoryState.Hotbar or {}
 	local hammerAvailable = inventoryState.HammerAvailable
+	local isBackpackOpen = inventoryState.BackpackOpen
+
+	local cardRef = hooks.useValue(Roact.createRef())
+
+	-- The hotbar card is inventory UI: releasing a drag outside it drops the item
+	hooks.useEffect(function()
+		local card = cardRef.value:getValue()
+		if isBackpackOpen or not card then return end
+
+		local InventoryController = Knit.GetController("InventoryController")
+		if not InventoryController then return end
+
+		return InventoryController:RegisterDragSurface("hud_hotbar", card)
+	end, { isBackpackOpen })
 
 	local function handleSlotClick(slotNumber)
 		local InventoryController = Knit.GetController("InventoryController")
-		if InventoryController then
+		if InventoryController and not InventoryController:ShouldIgnoreSlotClick() then
 			InventoryController:ToggleEquipSlot(slotNumber)
+		end
+	end
+
+	local function handleSlotPressStart(slotNumber, item)
+		local InventoryController = Knit.GetController("InventoryController")
+		if InventoryController then
+			InventoryController:BeginHotbarPress(slotNumber, item)
 		end
 	end
 
@@ -54,6 +75,8 @@ local function Hotbar(props, hooks)
 			item = hotbar[i],
 			isEquipped = equippedSlot == i,
 			onSlotClick = handleSlotClick,
+			onPressStart = handleSlotPressStart,
+			isDropZone = not isBackpackOpen,
 		})
 	end
 
@@ -90,6 +113,7 @@ local function Hotbar(props, hooks)
 			Image = "",
 			AutoButtonColor = false,
 			ClipsDescendants = true,
+			[Roact.Ref] = cardRef.value,
 		}, {
 			UICorner = Roact.createElement("UICorner", {
 				CornerRadius = Config.CornerRadius,

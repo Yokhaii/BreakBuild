@@ -53,6 +53,20 @@ local function Backpack(props, hooks)
 	local inventoryCraftProgress, setInventoryCraftProgress = hooks.useState(0)
 	local isInventoryCrafting, setIsInventoryCrafting = hooks.useState(false)
 
+	local inventoryFrameRef = hooks.useValue(Roact.createRef())
+
+	-- The inventory frame (with its side panels) is inventory UI: releasing a drag
+	-- on the dark background around it drops the item in the world
+	hooks.useEffect(function()
+		local inventoryFrame = inventoryFrameRef.value:getValue()
+		if not isOpen or not inventoryFrame then return end
+
+		local InventoryController = Knit.GetController("InventoryController")
+		if not InventoryController then return end
+
+		return InventoryController:RegisterDragSurface("backpack", inventoryFrame)
+	end, { isOpen })
+
 	-- Clear pool when inventory closes/opens
 	hooks.useEffect(function()
 		if not isOpen then
@@ -337,6 +351,7 @@ local function Backpack(props, hooks)
 			Active = true,
 			ZIndex = 11,
 			ClipsDescendants = false,
+			[Roact.Ref] = inventoryFrameRef.value,
 			[Roact.Event.MouseButton1Click] = function() end,
 		}, {
 			UIAspectRatioConstraint = Roact.createElement("UIAspectRatioConstraint", {

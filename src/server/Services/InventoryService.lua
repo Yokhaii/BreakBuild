@@ -13,6 +13,7 @@ local ItemCategorization = require(ReplicatedStorage.Shared.Utils.ItemCategoriza
 -- Services (to be initialized)
 local DataService
 local ZoneService
+local DroppedItemService
 
 local InventoryService = Knit.CreateService({
 	Name = "InventoryService",
@@ -32,7 +33,6 @@ local InventoryService = Knit.CreateService({
 -- Constants
 local HOTBAR_SIZE = 7
 local BACKPACK_SIZE = 21
-local DROP_DISTANCE = 5
 
 -- Types
 type InventoryItem = {
@@ -152,6 +152,20 @@ local function migrateToUnifiedHotbar(inventory)
 	inventory.CurrentMode = nil
 
 	return true
+end
+
+-- A hotbar saved with slot 1 empty is stored as a JSON object, so it comes back with
+-- string keys ("4", "6"): convert them back to numeric slots or those items are lost
+local function migrateHotbarKeys(inventory)
+	for key, item in pairs(table.clone(inventory.Hotbar)) do
+		local slot = type(key) == "string" and tonumber(key)
+		if slot then
+			inventory.Hotbar[key] = nil
+			if slot >= 1 and slot <= HOTBAR_SIZE and not inventory.Hotbar[slot] then
+				inventory.Hotbar[slot] = item
+			end
+		end
+	end
 end
 
 -- Items that were renamed: saved stacks are converted instead of being cleaned up as invalid
@@ -357,58 +371,6 @@ local function isPlayerInBuildingArea(player: Player): boolean
 	return math.abs(playerPosition.X - areaPosition.X) <= halfSize.X
 		and math.abs(playerPosition.Y - areaPosition.Y) <= halfSize.Y
 		and math.abs(playerPosition.Z - areaPosition.Z) <= halfSize.Z
-end
-
-local function createDroppedItem(itemName: string, quantity: number, position: Vector3): Model?
-	local itemConfig = ItemData.GetItem(itemName)
-	if not itemConfig then
-		warn("Cannot create dropped item: invalid item", itemName)
-		return nil
-	end
-
-	local assetsFolder = ReplicatedStorage:FindFirstChild("Assets")
-	if not assetsFolder then
-		warn("Assets folder not found")
-		return nil
-	end
-
-	local pathParts = string.split(itemConfig.modelPath, ".")
-	local current = assetsFolder
-	for _, part in ipairs(pathParts) do
-		current = current:FindFirstChild(part)
-		if not current then
-			warn("Item model not found at path:", itemConfig.modelPath)
-			return nil
-		end
-	end
-
-	if not current:IsA("Model") then
-		warn("Item path does not point to a Model:", itemConfig.modelPath)
-		return nil
-	end
-
-	local droppedModel = current:Clone()
-	droppedModel.Name = itemName .. "_Dropped"
-
-	if droppedModel.PrimaryPart then
-		droppedModel:SetPrimaryPartCFrame(CFrame.new(position))
-		droppedModel.PrimaryPart.Anchored = false
-		droppedModel.PrimaryPart.CanCollide = true
-	end
-
-	local quantityValue = Instance.new("IntValue")
-	quantityValue.Name = "Quantity"
-	quantityValue.Value = quantity
-	quantityValue.Parent = droppedModel
-
-	local itemNameValue = Instance.new("StringValue")
-	itemNameValue.Name = "ItemName"
-	itemNameValue.Value = itemName
-	itemNameValue.Parent = droppedModel
-
-	droppedModel.Parent = workspace
-
-	return droppedModel
 end
 
 --|| Public Functions ||--
@@ -906,48 +868,77 @@ function InventoryService:UnequipItem(player: Player): boolean
 	return true
 end
 
-function InventoryService:DropEquippedItem(player: Player): boolean
+-- Whether AddItem(player, itemName, quantity) would succeed. Never yields (false while data is loading).
+function InventoryService:CanAddItem(player: Player, itemName: string, quantity: number): boolean
+	local profile = DataService.Profiles[player]
+	local inventory = profile and profile.Data.Inventory
+	if not inventory then return false end
+
+	local itemConfig = ItemData.GetItem(itemName)
+	if not itemConfig then return false end
+
+	local useHotbar = ItemCategorization.getItemCategory(itemConfig) == "hotbar"
+
+	if itemConfig.maxDurability then
+		return countFreeSlots(inventory, useHotbar) >= quantity
+	end
+
+	if itemConfig.stackable then
+		if useHotbar then
+			for slot = 1, HOTBAR_SIZE do
+				if inventory.Hotbar[slot] and inventory.Hotbar[slot].itemName == itemName then
+					return true
+				end
+			end
+		end
+		for slot = 1, BACKPACK_SIZE do
+			local item = bpGet(inventory.Backpack, slot)
+			if item and item.itemName == itemName then
+				return true
+			end
+		end
+	end
+
+	return countFreeSlots(inventory, useHotbar) > 0
+end
+
+-- Drops `quantity` of an inventory stack (hotbar or backpack) in front of the player
+function InventoryService:DropItem(player: Player, itemId: string, quantity: number): boolean
 	local inventory = getInventory(player)
-	if not inventory or inventory.EquippedSlot == nil then
-		warn("No item equipped to drop")
-		return false
-	end
+	if not inventory then return false end
 
-	local slot = inventory.EquippedSlot
-
-	if slot == 0 then
-		warn("Cannot drop Hammer")
-		return false
-	end
-
-	local item = inventory.Hotbar[slot]
+	local hotbarSlot = findInHotbar(inventory.Hotbar, itemId)
+	local backpackSlot = not hotbarSlot and findInBackpack(inventory, itemId)
+	local item = hotbarSlot and inventory.Hotbar[hotbarSlot] or backpackSlot and bpGet(inventory.Backpack, backpackSlot)
 	if not item then return false end
 
 	local itemConfig = ItemData.GetItem(item.itemName)
 	if not itemConfig or not itemConfig.dropable then
-		warn("Item is not dropable:", item.itemName)
 		return false
 	end
 
-	local character = player.Character
-	if not character or not character.PrimaryPart then
-		warn("Cannot get player position")
+	quantity = math.clamp(math.floor(quantity), 1, item.quantity)
+
+	if not DroppedItemService:DropItem(player, item.itemName, quantity, item.durability) then
 		return false
 	end
 
-	local lookVector = character.PrimaryPart.CFrame.LookVector
-	local dropPosition = character.PrimaryPart.Position + (lookVector * DROP_DISTANCE)
-
-	self:UnequipItem(player)
-
-	createDroppedItem(item.itemName, item.quantity, dropPosition)
-
-	inventory.Hotbar[slot] = nil
-
-	self.Client.ItemDropped:Fire(player, item.itemName, item.quantity)
-	fireInventoryUpdate(self, player, inventory)
+	self:RemoveItem(player, itemId, quantity)
+	self.Client.ItemDropped:Fire(player, item.itemName, quantity)
 
 	return true
+end
+
+-- G key: drops one of the equipped stack
+function InventoryService:DropEquippedItem(player: Player): boolean
+	local inventory = getInventory(player)
+	if not inventory then return false end
+
+	local slot = inventory.EquippedSlot
+	local item = slot and slot ~= 0 and inventory.Hotbar[slot]
+	if not item then return false end
+
+	return self:DropItem(player, item.id, 1)
 end
 
 -- Swap two slots in the inventory grid (1-21 = backpack slots, 22-28 = hotbar slots 1-7)
@@ -1052,6 +1043,22 @@ function InventoryService.Client:DropEquippedItem(player: Player)
 	return self.Server:DropEquippedItem(player)
 end
 
+function InventoryService.Client:DropItem(player: Player, itemId: string, quantity: number)
+	if type(itemId) ~= "string" or type(quantity) ~= "number" or quantity ~= quantity then
+		return false
+	end
+
+	local dropped = self.Server:DropItem(player, itemId, quantity)
+	if not dropped then
+		-- The client removed the stack optimistically: send the real inventory back
+		local inventory = getInventory(player)
+		if inventory then
+			fireInventoryUpdate(self.Server, player, inventory)
+		end
+	end
+	return dropped
+end
+
 function InventoryService.Client:SwapGridSlots(player: Player, fromGridIndex: number, toGridIndex: number)
 	return self.Server:SwapGridSlots(player, fromGridIndex, toGridIndex)
 end
@@ -1093,6 +1100,7 @@ end
 function InventoryService:KnitStart()
 	DataService = Knit.GetService("DataService")
 	ZoneService = Knit.GetService("ZoneService")
+	DroppedItemService = Knit.GetService("DroppedItemService")
 
 	local function initializeInventory(player)
 		local inventory = getInventory(player)
@@ -1108,6 +1116,8 @@ function InventoryService:KnitStart()
 		if not inventory.Hotbar then
 			inventory.Hotbar = {}
 		end
+
+		migrateHotbarKeys(inventory)
 
 		-- Initialize Backpack if nil
 		if not inventory.Backpack then
