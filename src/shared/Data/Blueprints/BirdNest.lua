@@ -2,7 +2,7 @@ local BirdNest = {
 	id = "BirdNest",
 	name = "BirdNest",
 	displayName = "Bird Nest",
-	description = "Let a bird build its nest on top of it, the bird will fly around and bring back random items",
+	description = "A bird moves in and flies off to look for treasure. Every 2 minutes it comes back with a random find: seeds, stone shards, iron ore, coal, and sometimes iron ingots or gold. Up to 10 finds wait in the nest, then the bird rests until you collect them, so click the nest often.",
 
 	-- Block requirements: offset is relative to anchor (PrimaryPart position)
 	-- Mixed block sizes: 4x4x4 slots use even offsets, 2x2x2 slots use odd offsets

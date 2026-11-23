@@ -35,7 +35,6 @@ local function BlueprintList(props, hooks)
 			LayoutOrder = i,
 			Name = blueprint.Name,
 			DisplayName = blueprint.DisplayName,
-			Description = blueprint.Description,
 			BlueprintData = blueprint,
 			IsUnlocked = blueprint.IsUnlocked ~= false,
 			IsSelected = selectedId == blueprint.Id,

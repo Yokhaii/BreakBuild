@@ -3,7 +3,8 @@
 	Three-panel layout:
 	  Left  — PanelFrame with scrollable blueprint list
 	  Center — transparent viewport showing the selected blueprint model + TopPanelFrame title + GET button
-	  Right — PanelFrame with craftable recipes for the selected blueprint
+	  Right — PanelFrame "Details": description of the selected blueprint, then its recipes
+	          (or its possible finds for passive blueprints)
 ]=]
 
 -- Services
@@ -31,10 +32,11 @@ local DarkOverlay = require(Components.Global.DarkOverlay)
 local BlueprintList = require(script.Components.BlueprintList)
 local BlueprintViewport = require(script.Components.BlueprintViewport)
 local GetButton = require(script.Components.GetButton)
-local RecipeList = require(Client.Roact.Applications.Furnace.Components.RecipeList)
+local BlueprintDetails = require(script.Components.BlueprintDetails)
 
 -- Data
 local Recipes = require(ReplicatedStorage.Shared.Data.Recipes)
+local Blueprints = require(ReplicatedStorage.Shared.Data.Blueprints)
 
 -- Actions
 local UIActions = require(Client.Rodux.Actions.UIActions)
@@ -91,6 +93,7 @@ local function BlueprintApplication(_, hooks)
 	-- Resolve the completed 3D model from ReplicatedStorage
 	local completedModel = nil
 	local stationRecipes = {}
+	local passiveLoot = nil
 	if selectedBlueprint then
 		local completedFolder = ReplicatedStorage:FindFirstChild("Assets")
 			and ReplicatedStorage.Assets:FindFirstChild("CompletedBlueprints")
@@ -98,6 +101,8 @@ local function BlueprintApplication(_, hooks)
 			completedModel = completedFolder:FindFirstChild(selectedBlueprint.Name)
 		end
 		stationRecipes = Recipes.GetRecipesForStation(selectedBlueprint.Name)
+		local definition = Blueprints.GetDefinition(selectedBlueprint.Name)
+		passiveLoot = definition and definition.passive and definition.passive.loot
 	end
 
 	if not isVisible then
@@ -182,19 +187,21 @@ local function BlueprintApplication(_, hooks)
 			ZIndex = 12,
 		}) or nil,
 
-		-- Right panel: craftable recipes for this station
+		-- Right panel: description + craftable recipes (or passive loot) for this blueprint
 		RightPanel = selectedBlueprint and Roact.createElement(PanelFrame, {
-			Name = "BlueprintRecipePanel",
+			Name = "BlueprintDetailsPanel",
 			AnchorPoint = Config.RightPanelAnchorPoint,
 			Position = Config.RightPanelPosition,
 			Size = Config.RightPanelSize,
 			AspectRatio = Config.RightPanelAspectRatio,
-			Title = "Recipes",
+			Title = "Details",
 			ZIndex = 12,
 		}, {
-			RecipeList = Roact.createElement(RecipeList, {
+			BlueprintDetails = Roact.createElement(BlueprintDetails, {
 				Size = UDim2.fromScale(1, 1),
+				Description = selectedBlueprint.Description,
 				Recipes = stationRecipes,
+				Loot = passiveLoot,
 				ZIndex = 13,
 			}),
 		}) or nil,

@@ -2,7 +2,7 @@ local Workbench = {
 	id = "Workbench",
 	name = "Workbench",
 	displayName = "Workbench",
-	description = "Description here.",
+	description = "Your first crafting station. Turn your planks, stone shards and iron ingots into pickaxes, axes, shovels and swords. Wooden tools get you started, stone and iron tools break blocks faster and last longer. Crafting takes a few seconds: you can walk away and pick up your tools when you come back.",
 
 	-- Block requirements: offset is relative to anchor (PrimaryPart position)
 	blocks = {

@@ -2,7 +2,7 @@ local Furnace = {
 	id = "Furnace",
 	name = "Furnace",
 	displayName = "Furnace",
-	description = "Description here.",
+	description = "Smelt raw materials into new ones. Turn iron ore into iron ingots for iron tools, logs into charcoal, and dirt into sand. Every recipe burns fuel: logs and planks work, coal and charcoal burn twice as long. Smelting takes time, so start a batch and come back later.",
 
 	-- Block requirements: offset is relative to anchor (PrimaryPart position)
 	blocks = {

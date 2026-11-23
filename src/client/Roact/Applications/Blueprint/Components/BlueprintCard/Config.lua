@@ -34,12 +34,8 @@ return {
 	InfoContainerAnchorPoint = Vector2.new(0, 0.5),
 	InfoLayoutPadding = UDim.new(0.02, 0),
 
-	TitleSize = UDim2.fromScale(1, 0.4),
+	TitleSize = UDim2.fromScale(1, 0.5),
 	TitleColor = Color3.fromRGB(40, 40, 40),
 	TitleStrokeColor = Color3.fromRGB(160, 160, 160),
 	TitleStrokeThickness = 2,
-
-	DescriptionSize = UDim2.fromScale(1, 0.55),
-	DescriptionColor = Color3.fromRGB(80, 80, 80),
-	DescriptionFont = Font.fromEnum(Enum.Font.Gotham),
 }

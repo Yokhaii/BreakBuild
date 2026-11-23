@@ -2,7 +2,7 @@ local Chest = {
 	id = "Chest",
 	name = "Chest",
 	displayName = "Chest",
-	description = "Description here.",
+	description = "Store the items you don't want to carry around. Open it to move items between your backpack and the chest, tools keep their durability. Everything inside stays safe, even when you pick the chest up and place it somewhere else.",
 
 	-- Block requirements: offset is relative to anchor (PrimaryPart position)
 	-- Mixed block sizes: 4x4x4 slots use even offsets, 2x2x2 slots use odd offsets

@@ -2,7 +2,7 @@ local CropField = {
 	id = "CropField",
 	name = "CropField",
 	displayName = "Crop Field",
-	description = "Plant seeds on its dirt plots and harvest the crops once they are grown",
+	description = "Grow your own crops on its 4 dirt plots. Hold seeds and click an empty plot to plant them, then click the field to harvest everything that is ripe. Wheat, carrots and melons each take a different time to grow, and they keep growing while you are away. Every harvest gives you the crop and its seed back. Seeds are found by the bird of the Bird Nest.",
 
 	-- Block requirements: offset is relative to anchor (PrimaryPart position)
 	-- Mixed block sizes: 4x4x4 slots use even offsets, 2x2x2 slots use odd offsets

@@ -1,7 +1,8 @@
 --[=[
 	BlueprintCard Component
 	Same visual design as RecipeCard: StudBackground card, dark image box on the
-	left showing the CompletedBlueprint icon, title + description on the right.
+	left showing the CompletedBlueprint icon, title on the right (the description
+	is shown in the Details panel).
 	Supports selected highlight and locked overlay.
 ]=]
 
@@ -135,19 +136,6 @@ local function BlueprintCard(props, hooks)
 					StrokeThickness = Config.TitleStrokeThickness,
 					TextXAlignment = Enum.TextXAlignment.Left,
 					LayoutOrder = 1,
-					ZIndex = baseZIndex + 4,
-				}),
-
-				Description = Roact.createElement("TextLabel", {
-					Size = Config.DescriptionSize,
-					BackgroundTransparency = 1,
-					Text = props.Description or "",
-					TextColor3 = Config.DescriptionColor,
-					TextScaled = true,
-					FontFace = Config.DescriptionFont,
-					TextXAlignment = Enum.TextXAlignment.Left,
-					TextWrapped = true,
-					LayoutOrder = 2,
 					ZIndex = baseZIndex + 4,
 				}),
 			}),

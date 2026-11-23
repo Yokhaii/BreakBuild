@@ -142,7 +142,12 @@ ScreenGui (IgnoreGuiInset, ZIndexBehavior = Global)
         ├── BlueprintList
         ├── BlueprintCard / UnlockedBlueprintCard / LockedBlueprintCard
         ├── GetButton
-        └── BlueprintViewport (3D preview)
+        ├── BlueprintViewport (3D preview)
+        └── BlueprintDetails (right "Details" panel: big description box, then
+            "Available recipes" + RecipeCards in one ScrollingFrame; the box is
+            sized so two recipes fit before scrolling. Passive blueprints show
+            "Possible finds" + LootCards instead: passive.loot item, amount per
+            trip and chance = weight / total weight)
 
 ================================================================================
 5. RODUX STORE STRUCTURE
