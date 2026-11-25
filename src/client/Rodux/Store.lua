@@ -18,6 +18,7 @@ local BiomeTransitionReducer = require(Reducers.BiomeTransitionReducer)
 local TutorialReducer = require(Reducers.TutorialReducer)
 local ObjectiveReducer = require(Reducers.ObjectiveReducer)
 local DropPromptReducer = require(Reducers.DropPromptReducer)
+local BreakingStreakReducer = require(Reducers.BreakingStreakReducer)
 
 -- Modules
 local Rodux = require(ReplicatedStorage.Packages.Rodux)
@@ -38,6 +39,7 @@ local StoreReducer = Rodux.combineReducers({
 	TutorialReducer = TutorialReducer,
 	ObjectiveReducer = ObjectiveReducer,
 	DropPromptReducer = DropPromptReducer,
+	BreakingStreakReducer = BreakingStreakReducer,
 })
 
 local Store = Rodux.Store.new(StoreReducer, nil, {

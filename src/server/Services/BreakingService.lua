@@ -34,6 +34,7 @@ local BreakingService = Knit.CreateService({
 		BreakingProgress = Knit.CreateSignal(), -- (breakableId, progress 0-1)
 		BreakingStopped = Knit.CreateSignal(), -- (breakableId)
 		BreakableBroken = Knit.CreateSignal(), -- (breakableId, dropItem, position)
+		StreakUpdated = Knit.CreateSignal(), -- (step 0-3, blocks broken in a row, bonus 0-1, isIdle)
 	},
 	-- Server-side signal for spawner services to listen to
 	BreakableDestroyed = nil, -- (player, breakableId, dropItem, position, dropAmount, isGlobal) — created in KnitInit
@@ -68,6 +69,14 @@ type BreakingState = {
 	toolConfig: any,
 }
 
+type StreakState = {
+	activeTime: number, -- Seconds spent actively breaking since the streak began
+	idleTime: number, -- Seconds since the player last broke anything
+	isIdle: boolean, -- Not breaking: the reset countdown is running
+	step: number, -- 0 = warming up, 1..#StreakStepBonuses
+	blocks: number, -- Blocks broken in a row (warm-up included)
+}
+
 -- Private variables
 local playerBreakables: {[Player]: {[string]: RuntimeBreakable}} = {} -- Registered breakables per player
 local playerBreaking: {[Player]: BreakingState} = {} -- Currently breaking state per player
@@ -75,6 +84,9 @@ local playerBreaking: {[Player]: BreakingState} = {} -- Currently breaking state
 -- Global breakables (shared across all players)
 local globalBreakables: {[string]: RuntimeBreakable} = {}
 local globalBreaking: {[Player]: BreakingState} = {}
+
+-- Breaking streak per player (nil = no streak)
+local playerStreaks: {[Player]: StreakState} = {}
 
 -- Signal module for server-side events
 local Signal = require(ReplicatedStorage.Packages.Signal)
@@ -151,6 +163,75 @@ local function getBreakablesData(player: Player): {[string]: {materialType: stri
 	return data
 end
 
+--|| Breaking Streak ||--
+
+-- Break time reduction from the player's current streak step (0 = none)
+local function getStreakBonus(player: Player): number
+	local streak = playerStreaks[player]
+	if not streak or streak.step == 0 then return 0 end
+	return BreakingConfig.StreakStepBonuses[streak.step]
+end
+
+local function fireStreakUpdated(player: Player)
+	local streak = playerStreaks[player]
+	if streak then
+		BreakingService.Client.StreakUpdated:Fire(player, streak.step, streak.blocks, getStreakBonus(player), streak.isIdle)
+	else
+		BreakingService.Client.StreakUpdated:Fire(player, 0, 0, 0, false)
+	end
+end
+
+-- Is the player holding on a breakable they can actually break?
+local function isActivelyBreaking(player: Player): boolean
+	local state = playerBreaking[player] or globalBreaking[player]
+	return state ~= nil and state.totalBreakTime ~= math.huge
+end
+
+-- Accumulate breaking time, reset the streak after StreakResetDelay seconds without breaking
+local function updateStreaks(deltaTime: number)
+	for _, player in ipairs(Players:GetPlayers()) do
+		local streak = playerStreaks[player]
+
+		if isActivelyBreaking(player) then
+			if not streak then
+				streak = { activeTime = 0, idleTime = 0, isIdle = false, step = 0, blocks = 0 }
+				playerStreaks[player] = streak
+			end
+			streak.activeTime += deltaTime
+			streak.idleTime = 0
+			if streak.isIdle then
+				streak.isIdle = false
+				fireStreakUpdated(player)
+			end
+		elseif streak then
+			if not streak.isIdle then
+				streak.isIdle = true
+				fireStreakUpdated(player)
+			end
+			streak.idleTime += deltaTime
+			if streak.idleTime > BreakingConfig.StreakResetDelay then
+				playerStreaks[player] = nil
+				fireStreakUpdated(player)
+			end
+		end
+	end
+end
+
+-- Count a completed break; moves up one step once the next threshold is reached
+local function onStreakBlockBroken(player: Player)
+	local streak = playerStreaks[player]
+	if not streak then return end
+
+	streak.blocks += 1
+	local nextStep = streak.step + 1
+	if nextStep <= #BreakingConfig.StreakStepBonuses
+		and streak.activeTime >= nextStep * BreakingConfig.StreakStepDuration then
+		streak.step = nextStep
+	end
+
+	fireStreakUpdated(player)
+end
+
 --|| Public Functions ||--
 
 -- Register a breakable object for a player
@@ -225,6 +306,7 @@ function BreakingService:StartBreaking(player: Player, breakableId: string): boo
 	else
 		breakTime = MaterialData.GetBreakTime(breakable.materialType, toolConfig.breakSpeed, toolConfig.toolCategory)
 	end
+	breakTime *= 1 - getStreakBonus(player)
 
 	local state = {
 		breakableId = breakableId,
@@ -399,6 +481,7 @@ local function updateBreakingProgress()
 
 			-- Every completed break wears the equipped tool
 			InventoryService:WearEquippedTool(player)
+			onStreakBlockBroken(player)
 
 			-- Call custom callback if provided
 			if onBroken then
@@ -473,6 +556,7 @@ local function updateBreakingProgress()
 			end
 
 			InventoryService:WearEquippedTool(player)
+			onStreakBlockBroken(player)
 
 			if onBroken then
 				task.spawn(function()
@@ -506,10 +590,12 @@ function BreakingService:KnitStart()
 		playerBreaking[player] = nil
 		playerBreakables[player] = nil
 		globalBreaking[player] = nil
+		playerStreaks[player] = nil
 	end)
 
-	-- Start breaking progress loop
+	-- Start breaking progress loop (streak time first, so the frame a block finishes counts)
 	RunService.Heartbeat:Connect(function(deltaTime)
+		updateStreaks(deltaTime)
 		updateBreakingProgress()
 	end)
 end

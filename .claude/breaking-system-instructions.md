@@ -49,6 +49,7 @@ CLIENT:
 SHARED:
   src/shared/Config/BreakingConfig.lua
     - BreakRange, BareHandBreakSpeed, BareHandToolTier
+    - StreakStepDuration, StreakStepBonuses, StreakResetDelay (section 12)
 
   src/shared/Config/GlobalBreakingConfig.lua
     - GridSize, BlockSize, CycleDuration, MaxDepth, BatchSize
@@ -264,6 +265,7 @@ Client Signals (from BreakingService):
   - BreakingProgress(breakableId, progress)   -- Fired every heartbeat
   - BreakingStopped(breakableId)
   - BreakableBroken(breakableId, dropItem, position)
+  - StreakUpdated(step, blocks, bonus, isIdle) -- See section 12
 
 Server Signal:
   - BreakingService.BreakableDestroyed:Fire(player, breakableId, dropItem, position)
@@ -289,6 +291,37 @@ Tool Config Properties:
     isBreakingTool = true,    -- Must be true
     canBreakAll = false,      -- Bypass tier check if true
   }
+
+================================================================================
+12. BREAKING STREAK
+================================================================================
+
+Keep breaking to break faster, with ANY tool (bare hand included).
+Server-owned, in BreakingService (playerStreaks, not saved).
+
+  - ACTIVE TIME: every Heartbeat where the player has a BreakingState they can
+    actually break (totalBreakTime ~= math.huge) adds deltaTime. Cancelled
+    breaks count too. Time-based, so fast tools don't reach the steps sooner.
+  - STEPS: on each completed break, if activeTime >= (step + 1) * 10s, the
+    streak moves up ONE step. Step 1/2/3 = 10/20/30% faster (StreakStepBonuses),
+    so ~30s of breaking reaches the max.
+  - BONUS: applied in StartBreaking: breakTime *= 1 - bonus (Stone 2s -> 1.8s
+    at step 1). A new step applies from the next block started.
+  - RESET: only time WITHOUT breaking resets it: idleTime runs while not
+    actively breaking, and after StreakResetDelay (7s) the whole streak
+    (time, step, blocks) is cleared. Switching tools does not reset it.
+  - Blocks counts every completed break since the streak began (warm-up too).
+  - isIdle flips (and StreakUpdated fires) when the player stops / starts
+    actively breaking, so the client can show the reset countdown.
+
+CLIENT:
+  BreakingService.StreakUpdated(step, blocks, bonus, isIdle)
+    -> Modules/Synchronization/BreakingStreak.lua
+    -> BreakingStreakReducer { Step, Blocks, Bonus, IsIdle }
+    -> HUD/Components/BreakingStreak (top right, under BalanceDisplay):
+       "x14" + "STREAK +10%", only while Step > 0, color per step, pops on
+       each block. Bar under it: full while breaking, drains linearly over
+       StreakResetDelay while IsIdle, snaps back to full when breaking again
 
 ================================================================================
 END OF DOCUMENT

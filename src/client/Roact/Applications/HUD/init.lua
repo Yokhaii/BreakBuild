@@ -14,6 +14,7 @@ local RoduxHooks = require(ReplicatedStorage.Packages.Roduxhooks)
 local Hotbar = require(script.Components.Hotbar)
 local CycleTimer = require(script.Components.CycleTimer)
 local BalanceDisplay = require(script.Components.BalanceDisplay)
+local BreakingStreak = require(script.Components.BreakingStreak)
 local SpawnButton = require(script.Components.SpawnButton)
 local ViewButton = require(script.Components.ViewButton)
 local ObjectivesTracker = require(script.Components.ObjectivesTracker)
@@ -40,6 +41,7 @@ local function HUD(_, hooks)
 		Hotbar = Roact.createElement(Hotbar),
 		CycleTimer = Roact.createElement(CycleTimer),
 		BalanceDisplay = Roact.createElement(BalanceDisplay),
+		BreakingStreak = Roact.createElement(BreakingStreak),
 		SpawnButton = Roact.createElement(SpawnButton),
 		ViewButton = Roact.createElement(ViewButton),
 		ObjectivesTracker = Roact.createElement(ObjectivesTracker),
