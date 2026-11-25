@@ -227,6 +227,16 @@ function CropField:GetHoverHighlightAdornee(screenPosition: Vector2)
 	return plotIndex and self:_GetPlotParts()[plotIndex] or false
 end
 
+-- ControlHints left click action: "Plant" on an empty plot while holding seeds
+function CropField:GetHoverAction(screenPosition: Vector2): string?
+	if not isHoldingSeeds() then return nil end
+	local plotIndex = self:_GetPlotAt(screenPosition)
+	if plotIndex and not self._Plots[plotIndex] then
+		return "Plant"
+	end
+	return nil
+end
+
 function CropField:Destroy()
 	for _, entry in pairs(self._PlotLabels) do
 		entry.billboard:Destroy()

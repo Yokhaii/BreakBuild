@@ -89,6 +89,8 @@ WORKBENCH (stationType = "Workbench"):
 FURNACE (stationType = "Furnace"):
   IronIngot (10s):   4 IronOre → 1 IronIngot
   Sand (4s):         1 Dirt → 1 Sand
+  SteelIngot (15s):  2 IronIngot + Tier 2 fuel → 1 SteelIngot
+  GoldIngot (15s):   4 RawGold + Tier 2 fuel → 1 GoldIngot
 
 STONECUTTER (stationType = "StoneCutter"):
   HalfStone (3s):    1 Stone → 4 HalfStone

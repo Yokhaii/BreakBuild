@@ -3,7 +3,9 @@ return {
 	RawGold = "85213045945051",
 	RawDiamond = "83572964224219",
 	StoneShard = "127976545168441",
-	IronIngot = "108392466098680",
+	IronIngot = "99489082316257",
+	SteelIngot = "78296209657201",
+	GoldIngot = "104585258578748",
 	Charcoal = "125911706089874",
 	Coal = "89749330660596",
 }

@@ -148,7 +148,7 @@ BLOCKS:
   Log (4x4x4) | SprucePlank (2x2x2) | HalfStone (2x2x2) | Bedrock (4x4x4)
 
 ORES:
-  StoneShard | IronOre | RawGold | RawDiamond | IronIngot
+  StoneShard | IronOre | RawGold | RawDiamond | IronIngot | SteelIngot | GoldIngot
   All stackable (max 64)
 
 TOOLS (Breaking):

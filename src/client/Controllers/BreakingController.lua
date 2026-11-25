@@ -803,6 +803,13 @@ local function onHeartbeat(deltaTime: number)
 	end
 end
 
+--|| Public Functions ||--
+
+-- Breakable under the cursor and in range (desktop), whether or not the held tool can break it
+function BreakingController:GetHoveredBreakableId(): string?
+	return hoveredBreakableId
+end
+
 --|| Knit Lifecycle ||--
 
 function BreakingController:KnitInit()

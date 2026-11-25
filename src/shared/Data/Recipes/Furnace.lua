@@ -42,4 +42,32 @@ return {
 			{ itemName = "Sand", quantity = 1 },
 		},
 	},
+	SteelIngot = {
+		id = "SteelIngot",
+		displayName = "Steel Ingot",
+		stationType = "Furnace",
+		craftTime = 15,
+		order = 4,
+		inputs = {
+			{ itemName = "IronIngot", quantity = 2 },
+			{ fuelTier = 2, quantity = 4 },
+		},
+		outputs = {
+			{ itemName = "SteelIngot", quantity = 1 },
+		},
+	},
+	GoldIngot = {
+		id = "GoldIngot",
+		displayName = "Gold Ingot",
+		stationType = "Furnace",
+		craftTime = 15,
+		order = 5,
+		inputs = {
+			{ itemName = "RawGold", quantity = 4 },
+			{ fuelTier = 2, quantity = 4 },
+		},
+		outputs = {
+			{ itemName = "GoldIngot", quantity = 1 },
+		},
+	},
 }

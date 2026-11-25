@@ -81,6 +81,7 @@ local function StudBackground(props, hooks)
 		Size = props.Size or UDim2.fromScale(1, 1),
 		Position = props.Position or UDim2.fromScale(0.5, 0.5),
 		AnchorPoint = props.AnchorPoint or Vector2.new(0.5, 0.5),
+		LayoutOrder = props.LayoutOrder,
 		BackgroundColor3 = props.BackgroundColor or Config.BackgroundColor,
 		BackgroundTransparency = props.BackgroundTransparency or 0,
 		BorderSizePixel = 0,

@@ -1346,6 +1346,27 @@ function BuildingController:GetPreviewPosition(): Vector3?
 	return currentPosition
 end
 
+-- Whether the block preview is shown (building mode, aiming inside the BuildingArea)
+function BuildingController:IsPreviewVisible(): boolean
+	return buildingMode and previewModel ~= nil and previewModel.Parent ~= nil
+end
+
+-- Block, blueprint or structure the Hammer would remove (removal mode only)
+function BuildingController:GetRemovalTarget(): Model?
+	if not removalMode then
+		return nil
+	end
+	return hoveredStructure or hoveredBlueprint or hoveredBlock
+end
+
+-- Owned completed structure under the cursor (outside removal mode)
+function BuildingController:GetHoveredStructure(): Model?
+	if hoveredPreviewType ~= "structure" then
+		return nil
+	end
+	return hoveredPreviewBlueprint
+end
+
 -- Force stop building mode (external call)
 function BuildingController:StopBuildingMode()
 	stopBuildingMode()

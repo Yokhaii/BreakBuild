@@ -17,4 +17,11 @@ UIActions.setFirstPerson = Rodux.makeActionCreator("setFirstPerson", function(is
 	}
 end)
 
+-- Set the left click action shown in the ControlHints (nil = no left click hint)
+UIActions.setPrimaryAction = Rodux.makeActionCreator("setPrimaryAction", function(primaryAction)
+	return {
+		primaryAction = primaryAction,
+	}
+end)
+
 return UIActions

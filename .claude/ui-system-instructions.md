@@ -125,7 +125,8 @@ ScreenGui (IgnoreGuiInset, ZIndexBehavior = Global)
     │   ├── CycleTimer (day/night)
     │   ├── SpawnButton
     │   ├── ViewButton (first person / normal view toggle, see CameraController)
-    │   └── ObjectivesTracker (main + pinned objectives, see objective doc)
+    │   ├── ObjectivesTracker (main + pinned objectives, see objective doc)
+    │   └── ControlHints (bottom right key hints, see section 9)
     │
     ├── Objectives (full objective list, CurrentFrame == "Objectives")
     │
@@ -158,6 +159,7 @@ Complete state tree:
     UIReducer = {
       CurrentFrame = "HUD",           -- "HUD" | "None" | station names
       IsFirstPerson = false,          -- set by CameraController
+      PrimaryAction = nil,            -- left click hint text, set by ControlHintsController
     },
 
     InventoryReducer = {
@@ -297,6 +299,22 @@ CAMERA (src/client/Controllers/CameraController.lua):
   - While a menu is open (BackpackOpen, DropPrompt, or CurrentFrame other than
     "HUD"/"None") it frees the mouse each frame after the camera locks it.
     New menus that use CurrentFrame get this for free.
+
+CONTROL HINTS (HUD/Components/ControlHints + Controllers/ControlHintsController.lua):
+  Bottom right rows "Action [key]", desktop only, hidden while a menu/backpack is open:
+  - Left click (mouse icon): UIReducer.PrimaryAction. ControlHintsController sets it every
+    Heartbeat from the hover state the other controllers already keep, only while aiming
+    at a valid target:
+      breaking tool + BreakingController:GetHoveredBreakableId()  -> "Break" (any tier)
+      Hammer + BuildingController:GetRemovalTarget()             -> "Remove"
+      Block + BuildingController:IsPreviewVisible()              -> "Place"
+      Blueprint/Structure + BlueprintPlacementController:IsPreviewVisible() -> "Place"
+      otherwise: hovered structure's client class GetHoverAction(screenPosition)
+        (CropField: "Plant" with seeds on an empty plot)
+  - G Drop: only when the equipped item is dropable
+  - V First person / Third person: always
+  New item action: add a branch in computePrimaryAction, or GetHoverAction on a
+  blueprint client class for structure interactions.
 
 ================================================================================
 10. CRAFTING UI FLOW

@@ -17,6 +17,7 @@ local BalanceDisplay = require(script.Components.BalanceDisplay)
 local SpawnButton = require(script.Components.SpawnButton)
 local ViewButton = require(script.Components.ViewButton)
 local ObjectivesTracker = require(script.Components.ObjectivesTracker)
+local ControlHints = require(script.Components.ControlHints)
 
 -- Component
 local function HUD(_, hooks)
@@ -42,6 +43,7 @@ local function HUD(_, hooks)
 		SpawnButton = Roact.createElement(SpawnButton),
 		ViewButton = Roact.createElement(ViewButton),
 		ObjectivesTracker = Roact.createElement(ObjectivesTracker),
+		ControlHints = Roact.createElement(ControlHints),
 	})
 end
 

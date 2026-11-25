@@ -872,6 +872,11 @@ function BlueprintPlacementController:GetCurrentBlueprintType()
 	return currentBlueprintType
 end
 
+-- Whether the blueprint/structure preview is shown under the cursor
+function BlueprintPlacementController:IsPreviewVisible()
+	return placementMode and previewModel ~= nil and previewModel.Parent ~= nil
+end
+
 -- Start placement mode externally (e.g., from UI)
 function BlueprintPlacementController:StartPlacementMode(blueprintType)
 	startPlacementMode(blueprintType)

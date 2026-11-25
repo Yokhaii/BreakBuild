@@ -19,6 +19,8 @@ ShopData.Prices = {
 	Coal = { buyPrice = 40 },
 	Charcoal = { buyPrice = 36 },
 	IronIngot = { buyPrice = 100 },
+	SteelIngot = { buyPrice = 250 },
+	GoldIngot = { buyPrice = 400 },
 	RawGold = { buyPrice = 160 },
 	RawDiamond = { buyPrice = 300 },
 
