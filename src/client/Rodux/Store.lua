@@ -19,6 +19,7 @@ local TutorialReducer = require(Reducers.TutorialReducer)
 local ObjectiveReducer = require(Reducers.ObjectiveReducer)
 local DropPromptReducer = require(Reducers.DropPromptReducer)
 local BreakingStreakReducer = require(Reducers.BreakingStreakReducer)
+local DevMobReducer = require(Reducers.DevMobReducer)
 
 -- Modules
 local Rodux = require(ReplicatedStorage.Packages.Rodux)
@@ -40,6 +41,7 @@ local StoreReducer = Rodux.combineReducers({
 	ObjectiveReducer = ObjectiveReducer,
 	DropPromptReducer = DropPromptReducer,
 	BreakingStreakReducer = BreakingStreakReducer,
+	DevMobReducer = DevMobReducer,
 })
 
 local Store = Rodux.Store.new(StoreReducer, nil, {

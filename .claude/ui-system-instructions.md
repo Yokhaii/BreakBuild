@@ -199,7 +199,7 @@ Complete state tree:
 SINGLE STATE: CurrentFrame (string)
   Default: "HUD"
   Possible values: "HUD", "None", "Workbench", "StoneCutter", "Furnace", "LogCutter",
-                   "Blueprint", "Shop", "Chest", "Objectives"
+                   "Blueprint", "Shop", "Chest", "Objectives", "MobSpawner" (dev)
 
 ACTION:
   UIActions.setCurrentFrame(frameName)
@@ -289,6 +289,7 @@ ACTIVE KEYBINDS:
   H: Toggle hammer equip (condition: in BuildingArea)
   G: Drop one of the equipped item
   V: Toggle first person / normal view (CameraController)
+  N: Toggle the Mob Spawner dev panel (MobController, dev players only)
 
 CAMERA (src/client/Controllers/CameraController.lua):
   - ToggleFirstPerson() / SetFirstPerson(bool): snaps the default camera's

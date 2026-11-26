@@ -1,12 +1,16 @@
 --[[
 	SpawnUtils.lua
 	Reusable utilities for picking valid world spawn positions.
-	Used by TreeService, and future mob/prop spawners.
+	Used by TreeService and MobSpawnService.
 
 	findGroundPosition(boundaryPart, groundTag, existingPositions, minSeparation)
 		Picks a random XZ point inside boundaryPart's bounding box, then
 		raycasts downward to find the first Ground-tagged surface.
 		Returns the surface position (sitting on top of the part) or nil.
+
+	findGroundAt(position, groundTag)
+		Raycasts downward at position's XZ to the first Ground-tagged surface.
+		Returns the surface position or nil.
 
 	pickWeightedRandom(weightTable)
 		Given {key = weight, ...} returns a randomly weighted key.
@@ -75,6 +79,16 @@ function SpawnUtils.findGroundPosition(
 	end
 
 	return nil
+end
+
+function SpawnUtils.findGroundAt(position: Vector3, groundTag: string): Vector3?
+	local groundInstances = buildGroundInstances(groundTag)
+	if #groundInstances == 0 then return nil end
+	rayParams.FilterDescendantsInstances = groundInstances
+
+	local rayOrigin = position + Vector3.new(0, RAY_START_OFFSET, 0)
+	local result = Workspace:Raycast(rayOrigin, Vector3.new(0, -RAY_START_OFFSET * 2, 0), rayParams)
+	return result and result.Position
 end
 
 -- Returns a key from weightTable chosen by weighted random
